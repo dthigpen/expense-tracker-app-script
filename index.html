@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <?!= include("styles") ?>
+  </head>
+
+  <body>
+    <!-- load JS libs -->
+    <?!= include('lib') ?>
+    <?!= include('datatable') ?>
+
+    <main class="wrapper">
+      <h1>Plaid Budget</h1>
+      <div id="app"></div>
+    </main>
+  </body>
+  <script type="module">
+    import { Nanny, html } from "https://esm.sh/nanny-state";
+    import { html as litHtml } from "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js";
+
+    function callBackend(fnName, ...fnArgs) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler((res) => resolve(res))
+          .withFailureHandler((err) => reject(err))[fnName](...fnArgs);
+      });
+    }
+    /**
+     * Data table component
+     * @param {Object} state - Nanny state object
+     * @param {Object} props - Component properties
+     * */
+    const Dialog = (state, props) => {
+      const {
+        title = "",
+        content = () => "",
+        open,
+        buttons = [{ text: "Close", onClick: () => null }],
+        requestCloseHandler = () => {},
+      } = props;
+      return html`
+        <sl-dialog
+          label="${title}"
+          @sl-request-close=${requestCloseHandler}
+          .open=${open}
+        >
+          ${open ? content() : ""}
+          ${buttons.map(
+            (btn) =>
+              html`<sl-button
+                slot="footer"
+                variant="primary"
+                @click=${btn.onClick}
+                >${btn.text}</sl-button
+              >`
+          )}
+        </sl-dialog>
+      `;
+    };
+    let elementEffects = {};
+    const now = new Date();
+    const currYear = now.getFullYear();
+    const currMonth = now.getMonth();
+    const { startDate: startOfMonthDate, endDate: endOfMonthDate } =
+      getFirstAndLastDateOfMonth(currYear, currMonth);
+
+    const elementEffect = (state, elementId, elementEffectFn, stateKeys) => {
+      state.Effect((s) => {
+        const element = document.getElementById(elementId);
+        if (element) {
+          console.log(`#${elementId} found`)
+          elementEffectFn(element, state);
+        } else {
+          console.log(`#${elementId} not found`)
+        }
+      }, stateKeys);
+
+      return elementId;
+    };
+
+    const View = (state) => {
+      console.log(elementEffects);
+      for (const [stateKey, elementDataMap] of Object.entries(elementEffects)) {
+        for (const [elId, elemProp] of Object.entries(elementDataMap)) {
+          const effectFn = (state) => {
+            const el = document.getElementById(elId);
+            if (el) {
+              console.log(
+                `found: Setting ${elId}.${elemProp} to ${state.Evaluate(
+                  stateKey
+                )}`
+              );
+              el[elemProp] = state.Evaluate(stateKey);
+            } else {
+              console.log(`Error could not find element ${elId}`);
+            }
+          };
+          effectFn.toString = () => [stateKey, elId, elemProp].join("-");
+          state.Effect(effectFn);
+        }
+      }
+      elementEffects = {};
+      /*
+      
+      */
+      return state.HTML`
+      <section>
+          <h2>Categories</h2>
+          <data-table id=${elementEffect(
+            state,
+            "categories-data-table",
+            (el, { categories }) => {
+              el.columns = [
+                {
+                  header: "Category",
+                  key: "name",
+                },
+                {
+                  header: "Actions",
+                  valueRenderer: (obj) => {
+                    return litHtml`<div style="display: flex; gap: 0.4rem">
+                      <sl-button
+                        size="small"
+                        @click=${() => {
+                          Update({ selectedCategory: obj });
+                        }}
+                      >
+                        View
+                      </sl-button>
+                    </div>`;
+                  },
+                },
+              ];
+              el.data = categories;
+            },
+            "categories"
+          )}></data-table>
+          ${Dialog(state, {
+            title: "Category",
+            requestCloseHandler: () => Update({ selectedCategory: null }),
+            open: state.selectedCategory !== null,
+            buttons: [
+              {
+                text: "Save",
+                onClick: (e) => {
+                  try {
+                    const name =
+                      document.getElementById("category-name-input")?.value ??
+                      "Unnamed Category";
+                    const includes = JSON.parse(
+                      document.getElementById("category-includes-input")
+                        ?.value ?? "[]"
+                    );
+                    const excludes = JSON.parse(
+                      document.getElementById("category-excludes-input")
+                        ?.value ?? "[]"
+                    );
+                    const categoryData = {
+                      ...state.selectedCategory,
+                      name,
+                      includes,
+                      excludes,
+                    };
+                    google.script.run
+                      .withSuccessHandler((updatedCategory) => {
+                        const newCategories = [...state.categories];
+                        const catIndex = newCategories.findIndex(
+                          (c) => c.id === updatedCategory.id
+                        );
+                        if (catIndex > -1) {
+                          newCategories[catIndex] = updatedCategory;
+                        } else {
+                          newCategories.push(updatedCategory);
+                        }
+                        Update({
+                          selectedCategory: null,
+                          categories: newCategories,
+                        });
+                      })
+                      .withFailureHandler((err) =>
+                        alert(`Error updating category: ${err}`)
+                      )
+                      .categoryRepoCall("createOrUpdateOne", categoryData);
+                  } catch (err) {
+                    alert(`Unable to save data. Error: ${err}`);
+                  }
+                },
+              },
+              {
+                text: "Close",
+                onClick: () => Update({ selectedCategory: null }),
+              },
+            ],
+            content: () =>
+              state.selectedCategory !== null
+                ? html`
+                    <div
+                      style="display:flex; flex-direction: column; gap: 0.6rem"
+                    >
+                      <label for="category-name-input">Name</label>
+                      <sl-input
+                        type="text"
+                        id="category-name-input"
+                        placeholder="Groceries"
+                        value=${state.selectedCategory?.name ?? ""}
+                      />
+                      <label for="category-includes-input">Includes</label>
+                      <sl-textarea
+                        filled
+                        id="category-includes-input"
+                        value=${JSON.stringify(
+                          state.selectedCategory?.includes ?? [],
+                          null,
+                          2
+                        )}
+                      >
+                      </sl-textarea>
+                      <label for="category-excludes-input">Excludes</label>
+                      <sl-textarea
+                        filled
+                        id="category-excludes-input"
+                        value=${JSON.stringify(
+                          state.selectedCategory?.excludes ?? [],
+                          null,
+                          2
+                        )}
+                      >
+                      </sl-textarea>
+                    </div>
+                  `
+                : "",
+          })}
+        </section>
+        <section>
+        
+            <h2>Transactions</h2>
+            <div>
+              <sl-button-group label="Alignment">
+                <sl-button @click=${() => {
+                  google.script.run
+                    .withFailureHandler((err) => {
+                      alert(
+                        `Unable to fetch Plaid transactions! Error: ${err}`
+                      );
+                    })
+                    .withSuccessHandler((data) => {
+                      alert(`Success: ${JSON.stringify(data)}`);
+                    })
+                    .fetchPlaidTransactions();
+                }}>Import</sl-button>
+                <sl-button @click=${() => {
+                  Update({ selectedPlaidConfig: state.user.plaid });
+                }}>
+                  <sl-icon slot="prefix" name="gear"></sl-icon>
+                  Plaid Settings
+                </sl-button>
+              </sl-button-group>
+            </div>
+            <form id="transactions-table-form" @submit=${(e) => {
+              e.preventDefault();
+              const form = document.getElementById("transactions-table-form");
+              const formData = new FormData(form);
+              const formObj = Object.fromEntries([...formData.entries()]);
+              callBackend("loadTransactions").then(
+                (res) => {
+                  Update({
+                    transactions: res,
+                  });
+                },
+                (err) => {
+                  alert(`Unable to display transactions! Error: ${err}`);
+                }
+              );
+
+              // google.script.run
+              //   .withFailureHandler((err) => {
+              //     alert(`Unable to display transactions! Error: ${err}`);
+              //   })
+              //   .withSuccessHandler((transactionsData) => {})
+              //   .loadTransactions();
+            }}>
+              <div style="display: flex; justify-content: start">
+                <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="small" value=${
+                  startOfMonthDate.toISOString().split("T")[0]
+                }></sl-input>
+                <sl-input type="date" name="end" id="transactions-end-date" help-text="End" size="small" value=${
+                  endOfMonthDate.toISOString().split("T")[0]
+                }></sl-input>
+                <sl-button type="submit" size="small">Display</sl-button>
+                </div>
+            </form>
+            <div style="overflow: scroll;">
+              <data-table id=${elementEffect(
+                state,
+                "transactions-data-table",
+                (el, { transactions }) => {
+                  el.columns = _transactionTableCols;
+                  el.data = transactions;
+                },
+                "transactions"
+              )}></data-table>
+            </div>
+            ${Dialog(state, {
+              title: "Plaid Settings",
+              requestCloseHandler: () => Update({ selectedPlaidConfig: null }),
+              open: state.selectedPlaidConfig !== null,
+              content: () => html`
+                <div style="display: flex; flex-direction: column; gap: 0.5rem">
+                  <label for="plaid-url">Plaid API URL</label>
+                  <sl-input
+                    type="text"
+                    id="plaid-url"
+                    value=${state.user.plaid.url}
+                    placeholder="Enter your Plaid API Endpoint URL"
+                  />
+                  <label for="plaid-client-id">Plaid Client Id</label>
+                  <sl-input
+                    type="text"
+                    id="plaid-client-id"
+                    value=${state.user.plaid.clientId}
+                    placeholder="Enter your Plaid Client Id"
+                  />
+                  <label for="plaid-secret">Plaid Secret</label>
+                  <sl-input
+                    type="password"
+                    id="plaid-secret"
+                    value=${state.user.plaid.secret}
+                    placeholder="Enter your Plaid Secret"
+                  />
+                  <label for="plaid-access-token">Plaid Access Token</label>
+                  <sl-input
+                    type="text"
+                    id="plaid-access-token"
+                    value=${state.user.plaid.accessToken}
+                    placeholder="Access token"
+                  />
+                </div>
+              `,
+              buttons: [
+                {
+                  text: "Save",
+                  onClick: () => {
+                    try {
+                      const newPlaidConfig = {
+                        url: document.getElementById("plaid-url")?.value ?? "",
+                        clientId:
+                          document.getElementById("plaid-client-id")?.value ??
+                          "",
+                        secret:
+                          document.getElementById("plaid-secret")?.value ?? "",
+                        accessToken:
+                          document.getElementById("plaid-access-token")
+                            ?.value ?? "",
+                      };
+                      google.script.run
+                        .withFailureHandler((err) => {
+                          alert(`Unable to save Plaid settings! Error: ${err}`);
+                        })
+                        .withSuccessHandler(() => {
+                          const user = state.user;
+                          user.plaid = newPlaidConfig;
+                          Update({
+                            selectedPlaidConfig: null,
+                            user: user,
+                          });
+                        })
+                        .saveUser(user);
+                    } catch (err) {
+                      alert(`Unable to save Plaid settings! Error: ${err}`);
+                    }
+                  },
+                },
+                {
+                  text: "Close",
+                  onClick: (e) => Update({ selectedPlaidConfig: null }),
+                },
+              ],
+            })}
+            
+          </section>
+          
+        <section>
+  <h2>Budget</h2>
+            <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 0.4rem">
+
+            <sl-select id="select-budget" placeholder="Select a budget" value=${
+              state.selectedBudget?.id ?? null
+            } @sl-input=${(e) => {
+        const selectedId = document.getElementById("select-budget")?.value;
+        if (selectedId === "new-budget") {
+          Update({ selectedBudget: { name: "" } });
+        } else {
+          const selectedBudget = state.budgets.find((b) => b.id === selectedId);
+          if (selectedBudget) {
+            Update({ selectedBudget });
+          } else {
+            alert(`Unable to find budget with id: ${selectedId}`);
+          }
+        }
+      }}>
+              ${state.budgets.map((b) => {
+                return html` <sl-option value="${b.id}">${b.name}</sl-option> `;
+              })}
+              <sl-option value="new-budget">New Budget</sl-option>
+            </sl-select>
+            <sl-button @click=${() => {
+              let newName = prompt(
+                "Budget Name:",
+                state.selectedBudget.name
+              )?.trim();
+              if (newName && newName != state.selectedBudget.name) {
+                const newBudget = { ...state.selectedBudget, name: newName };
+                google.script.run
+                  .withSuccessHandler((updatedBudget) => {
+                    const budgetIndex = state.budgets.findIndex(
+                      (c) => c.id === updatedBudget.id
+                    );
+                    if (budgetIndex > -1) {
+                      state.budgets[budgetIndex] = updatedBudget;
+                    } else {
+                      state.budgets.push(updatedBudget);
+                    }
+                    Update({
+                      selectedBudget: updatedBudget,
+                      budgets: state.budgets,
+                    });
+                  })
+                  .withFailureHandler((err) =>
+                    alert(`Error updating budget: ${err}`)
+                  )
+                  .budgetRepoCall("createOrUpdateOne", newBudget);
+              }
+            }}>Rename</sl-button>
+            <sl-button @click=${() => {
+              if (confirm(`Delete ${state.selectedBudget.name}?`)) {
+                const foundBudgetIndex = state.budgets.findIndex(
+                  (b) => b.id === state.selectedBudget.id
+                );
+                if (foundBudgetIndex > -1) {
+                  google.script.run
+                    .withSuccessHandler(() => {
+                      Update({
+                        selectedBudget: null,
+                        budgets: state.budgets.splice(foundBudgetIndex, 1),
+                      });
+                    })
+                    .withFailureHandler((err) =>
+                      alert(`Error renaming budget: ${err}`)
+                    )
+                    .budgetRepoCall("deleteOne", state.selectedBudget.id);
+                }
+              }
+            }}>Delete</sl-button>
+            </div>
+</section>
+          `;
+    };
+    const _transactionTableCols = [
+      {
+        header: "Date",
+        key: "date",
+      },
+      {
+        header: "Name",
+        key: "name",
+      },
+      {
+        header: "Amount",
+        key: "amount",
+        valueRenderer: ({ amount }) =>
+          litHtml`<div style="text-align: end;">${amount.toFixed(2)}</div>`,
+        sortable: true,
+      },
+      {
+        header: "Source",
+        key: "source",
+      },
+    ];
+    const State = {
+      View,
+      Element: document.getElementById("app"),
+      user: {
+        plaid: {
+          url: "",
+          clientId: "",
+          secret: "",
+          accessToken: "",
+        },
+      },
+      categories: [],
+      budgets: [],
+      transactions: [],
+      selectedBudget: null,
+      selectedCategory: null,
+      selectedPlaidConfig: null,
+    };
+    const Update = Nanny(State);
+    await Promise.allSettled([
+      customElements.whenDefined("data-table"),
+      customElements.whenDefined("sl-button"),
+      customElements.whenDefined("sl-dialog"),
+    ]);
+    // Custom components are registered now! Add
+    // the `ready` class so the UI fades in.
+    document.body.classList.add("ready");
+
+    google.script.run
+      .withSuccessHandler((data) => {
+        // select budget on first load
+        console.log(data);
+        const hasBudgets = data?.budgets && data.budgets.length > 0;
+        Update({
+          user: data.user,
+          categories: data?.categories ?? [],
+          budgets: data?.budgets ?? [],
+          selectedBudget: hasBudgets ? data.budgets[0] : null,
+        });
+      })
+      .loadAllData();
+
+    const transactionsStartPicker =
+      document.querySelector("#start-date-picker");
+    const transactionsEndPicker = document.querySelector("#end-date-picker");
+    const fetchTransactionsBtn = document.querySelector(
+      "#fetch-transactions-btn"
+    );
+    const DEFAULT_STATE = {
+      data: null,
+      ui: {
+        editors: {
+          categories: [],
+        },
+        selectedBudgetId: null,
+        selectedBudget: null,
+      },
+    };
+    const state = { ...DEFAULT_STATE };
+    function resetState() {
+      Object.assign(state, DEFAULT_STATE);
+    }
+
+    /*
+      Util function for getting the first and last day of the month
+      */
+    function getFirstAndLastDateOfMonth({
+      year = undefined,
+      month = undefined,
+    } = {}) {
+      const date = new Date();
+      if (year !== undefined && month !== undefined) {
+        date.setMonth(month);
+        date.setFullYear(year);
+      }
+      const startDate = new Date(date.getFullYear(), date.getMonth(), 1);
+      const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+      return {
+        startDate,
+        endDate,
+      };
+    }
+    /*
+    Util function to populate a table from a list of json objects
+    */
+    function populateTable(table, data = undefined, columns = undefined) {
+      const tableHead = table.querySelector("thead");
+      const tableBody = table.querySelector("tbody");
+      tableHead.innerHTML = "";
+      tableBody.innerHTML = "";
+      data ??= [];
+      // Creating table head
+      let row = tableHead.insertRow();
+      columns ??= Object.keys(data[0]);
+      columns.forEach((key) => {
+        let th = document.createElement("th");
+        th.textContent = key.replaceAll("_", " ");
+        row.appendChild(th);
+      });
+
+      // Creating table body
+      data.forEach((item) => {
+        let row = tableBody.insertRow();
+        columns.forEach((c) => {
+          const value = item?.[c] ?? "";
+          let cell = row.insertCell();
+          cell.textContent = value;
+        });
+      });
+    }
+  </script>
+</html>

@@ -1,0 +1,75 @@
+<script type="module">
+  import {
+    LitElement,
+    html as litHtml,
+  } from "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js";
+
+  export class DataTableElement extends LitElement {
+    static properties = {
+      data: { attribute: false },
+      columns: { attribute: false },
+      page: {},
+      itemsPerPage: {},
+    };
+
+    constructor() {
+      super();
+      this.data = [];
+      this.columns = [];
+      this.page = 0;
+      this.itemsPerPage = 10;
+    }
+
+    render() {
+      const defaultValueRenderer = (obj, col) => obj[col.key];
+      const defaultHeaderRenderer = (col) =>
+        litHtml`<div style="text-align: start;">${
+          col?.header ?? col.key
+        }</div>`;
+      // render header
+      const headers = [];
+      for (const col of this.columns) {
+        const renderer = col.headerRenderer ?? defaultHeaderRenderer;
+        const headerValue = renderer(col);
+        headers.push(headerValue);
+      }
+
+      // apply pagination
+      const startIndex = this.page * this.itemsPerPage;
+      const paginatedData = this.data.slice(
+        startIndex,
+        startIndex + this.itemsPerPage
+      );
+
+      // render body
+      const rows = [];
+      for (const obj of paginatedData) {
+        const row = [];
+        for (const col of this.columns) {
+          const renderer = col.valueRenderer ?? defaultValueRenderer;
+          const value = renderer(obj, col);
+          row.push(value);
+        }
+        rows.push(row);
+      }
+      return litHtml`
+          <table>
+            <thead>
+              <tr>
+                ${headers.map((h) => litHtml`<th>${h}</th>`)}
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(
+                (r) =>
+                  litHtml`<tr>
+                    ${r.map((v) => litHtml`<td>${v}</td>`)}
+                  </tr>`
+              )}
+            </tbody>
+          </table>
+        `;
+    }
+  }
+  customElements.define("data-table", DataTableElement);
+</script>
