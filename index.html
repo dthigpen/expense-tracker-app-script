@@ -11,16 +11,19 @@
     <?!= include('datatable') ?>
 
     <main class="wrapper">
-      <h1>Plaid Budget</h1>
+      <h1>Expense Tracker</h1>
       <div id="app"></div>
     </main>
   </body>
   <script type="module">
-    import { Nanny, html } from "https://esm.sh/nanny-state";
+    import { Nanny, html as nannyHtml } from "https://esm.sh/nanny-state";
+    // Used for custom lit components
     import { html as litHtml } from "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js";
+    // render uhtml blocks for data tables
+    // TODO determine why Nanny's re-export of uhtml does not work
     import {
       render,
-      html as uh,
+      html as uHtml,
     } from "https://cdn.jsdelivr.net/npm/uhtml@4.4.9/+esm";
     /*
      * Call a google app script function
@@ -48,7 +51,7 @@
         buttons = [{ text: "Close", onClick: () => null }],
         requestCloseHandler = () => {},
       } = props;
-      return html`
+      return nannyHtml`
         <sl-dialog
           label="${title}"
           @sl-request-close=${requestCloseHandler}
@@ -57,7 +60,7 @@
           ${open ? content() : ""}
           ${buttons.map(
             (btn) =>
-              html`<sl-button
+              nannyHtml`<sl-button
                 slot="footer"
                 variant=${btn?.variant ?? "primary"}
                 ?disabled=${btn?.disabled ?? false}
@@ -112,6 +115,7 @@
                     },
                     {
                       title: "",
+                      orderable: false,
                     },
                   ];
                   const rows = [];
@@ -120,7 +124,7 @@
                     const div = document.createElement("div");
                     render(
                       div,
-                      uh`<sl-icon @click=${() => {
+                      uHtml`<sl-icon @click=${() => {
                         Update({ selectedCategory: category });
                       }} name="three-dots-vertical"></sl-icon>`
                     );
@@ -251,7 +255,7 @@
                 ],
                 content: () =>
                   state.selectedCategory !== null
-                    ? html`
+                    ? nannyHtml`
                         <div
                           style="display:flex; flex-direction: column; gap: 0.6rem"
                         >
@@ -295,16 +299,16 @@
                 <div>
                   <sl-button-group label="Alignment">
                     <sl-button @click=${() => {
-                      google.script.run
-                        .withFailureHandler((err) => {
+                      callBackend("fetchPlaidTransactions").then(
+                        (data) => {
+                          alert(`Success: ${JSON.stringify(data)}`);
+                        },
+                        (err) => {
                           alert(
                             `Unable to fetch Plaid transactions! Error: ${err}`
                           );
-                        })
-                        .withSuccessHandler((data) => {
-                          alert(`Success: ${JSON.stringify(data)}`);
-                        })
-                        .fetchPlaidTransactions();
+                        }
+                      );
                     }}>Import</sl-button>
                     <sl-button @click=${() => {
                       Update({ selectedPlaidConfig: state.user.plaid });
@@ -321,7 +325,11 @@
                   );
                   const formData = new FormData(form);
                   const formObj = Object.fromEntries([...formData.entries()]);
-                  callBackend("loadTransactions").then(
+                  callBackend(
+                    "loadTransactions",
+                    formObj["start"],
+                    formObj["end"]
+                  ).then(
                     (res) => {
                       Update({
                         transactions: res,
@@ -331,15 +339,8 @@
                       alert(`Unable to display transactions! Error: ${err}`);
                     }
                   );
-
-                  // google.script.run
-                  //   .withFailureHandler((err) => {
-                  //     alert(`Unable to display transactions! Error: ${err}`);
-                  //   })
-                  //   .withSuccessHandler((transactionsData) => {})
-                  //   .loadTransactions();
                 }}>
-                  <div style="display: flex; justify-content: start">
+                  <div style="display: flex; justify-content: start; gap: 1rem">
                     <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="small" value=${
                       startOfMonthDate.toISOString().split("T")[0]
                     }></sl-input>
@@ -374,6 +375,20 @@
                         },
                         {
                           title: "Amount",
+                          render: (data, type, row) => {
+                            const amount = data;
+                            if (type === "display") {
+                              const div = document.createElement("div");
+                              render(
+                                div,
+                                uHtml`<div style="text-align: end;">${amount.toFixed(
+                                  2
+                                )}</div>`
+                              );
+                              return div;
+                            }
+                            return amount;
+                          },
                         },
                         {
                           title: "Source",
@@ -384,17 +399,6 @@
                         const row = columnKeys.map(
                           (k) => transaction?.[k] ?? ""
                         );
-                        // right align amount
-                        const amount = row[3];
-                        console.log(row);
-                        const div = document.createElement("div");
-                        render(
-                          div,
-                          uh`<div style="text-align: end;">${amount.toFixed(
-                            2
-                          )}</div>`
-                        );
-                        row[3] = div;
                         rows.push(row);
                       }
                       // TODO check that the array data has actually changed instead of rebuilding table
@@ -411,7 +415,6 @@
                         if (data === undefined) {
                           return;
                         }
-                        console.log(`row data: ${data}`);
                         const id = data[0];
                         Update({
                           selectedTransaction: state.transactions.find(
@@ -435,7 +438,7 @@
                     ],
                     content: () =>
                       state.selectedTransaction !== null
-                        ? html` <sl-tree> </sl-tree> `
+                        ? nannyHtml` <sl-tree> </sl-tree> `
                         : "",
                   })}
             
@@ -445,7 +448,7 @@
                   requestCloseHandler: () =>
                     Update({ selectedPlaidConfig: null }),
                   open: state.selectedPlaidConfig !== null,
-                  content: () => html`
+                  content: () => nannyHtml`
                     <div
                       style="display: flex; flex-direction: column; gap: 0.5rem"
                     >
@@ -546,7 +549,7 @@
         }
       }}>
                   ${state.budgets.map((b) => {
-                    return html`
+                    return nannyHtml`
                       <sl-option value="${b.id}">${b.name}</sl-option>
                     `;
                   })}
@@ -607,27 +610,6 @@
     </section>
               `;
     };
-    const _transactionTableCols = [
-      {
-        header: "Date",
-        key: "date",
-      },
-      {
-        header: "Name",
-        key: "name",
-      },
-      {
-        header: "Amount",
-        key: "amount",
-        valueRenderer: ({ amount }) =>
-          litHtml`<div style="text-align: end;">${amount.toFixed(2)}</div>`,
-        sortable: true,
-      },
-      {
-        header: "Source",
-        key: "source",
-      },
-    ];
     const State = {
       View,
       Debug: true,
@@ -662,7 +644,6 @@
     google.script.run
       .withSuccessHandler((data) => {
         // select budget on first load
-        console.log(data);
         const hasBudgets = data?.budgets && data.budgets.length > 0;
         Update({
           user: data.user,
@@ -670,6 +651,31 @@
           budgets: data?.budgets ?? [],
           selectedBudget: hasBudgets ? data.budgets[0] : null,
         });
+        // if plaid data exists try to fetch new transactions and fetch current month
+        if (data.user.plaid.accessToken) {
+          callBackend("fetchPlaidTransactions").then(
+            (data) => {
+              console.log(`Fetched ${data} new transactions from Plaid`);
+              callBackend(
+                "loadTransactions",
+                startOfMonthDate.toISOString(),
+                endOfMonthDate.toISOString()
+              ).then(
+                (res) => {
+                  Update({
+                    transactions: res,
+                  });
+                },
+                (err) => {
+                  alert(`Unable to display transactions! Error: ${err}`);
+                }
+              );
+            },
+            (err) => {
+              alert(`Unable to fetch Plaid transactions! Error: ${err}`);
+            }
+          );
+        }
       })
       .loadAllData();
 
@@ -710,7 +716,7 @@
           const div = document.createElement("div");
           render(
             div,
-            uh`<sl-tree-item><pre>${
+            uHtml`<sl-tree-item><pre>${
               k + ": " + JSON.stringify(v)
             }</pre></sl-tree-item>`
           );

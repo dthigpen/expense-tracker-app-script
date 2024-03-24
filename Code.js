@@ -167,6 +167,14 @@ function displayData() {
   console.log(JSON.stringify(transactions.slice(0,4)))
 }
 
+
+function clearTransactionsData() {
+  saveTransactions([])
+  const user = loadUser()
+  delete user.plaid.cursor
+  saveUser(user)
+}
+
 function clearAllData() {
   return PropertiesService.getUserProperties().deleteAllProperties()
 }
@@ -227,7 +235,15 @@ function saveCategories(categories) {
 }
 
 function loadTransactions(startDateIsoString, endDateIsoString) {
-  const transactions = loadValue('transactions', { defaultValue: [], useCache: USE_CACHE})
+  let transactions = loadValue('transactions', { defaultValue: [], useCache: USE_CACHE})
+  if(startDateIsoString) {
+    const startDate = new Date(startDateIsoString)
+    transactions = transactions.filter(t => new Date(t.date) >= startDate)
+  }
+  if(endDateIsoString) {
+    const endDate = new Date(endDateIsoString)
+    transactions = transactions.filter(t => new Date(t.date) <= endDate)
+  }
   return transactions
 }
 function saveTransactions(transactions) {
