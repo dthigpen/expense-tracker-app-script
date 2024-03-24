@@ -60,6 +60,7 @@
               html`<sl-button
                 slot="footer"
                 variant=${btn?.variant ?? "primary"}
+                ?disabled=${btn?.disabled ?? false}
                 @click=${btn.onClick}
                 >${btn.text}</sl-button
               >`
@@ -163,7 +164,6 @@
                   {
                     text: "Delete",
                     variant: "danger",
-                    // TODO get disabled boolean prop working
                     disabled: state?.selectedCategory?.id ? false : true,
                     onClick: (e) => {
                       if (
