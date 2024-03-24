@@ -18,12 +18,21 @@
   <script type="module">
     import { Nanny, html } from "https://esm.sh/nanny-state";
     import { html as litHtml } from "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js";
-
+    import {
+      render,
+      html as uh,
+    } from "https://cdn.jsdelivr.net/npm/uhtml@4.4.9/+esm";
+    /*
+     * Call a google app script function
+     * @param {String} fnName - Name of the function to call
+     * @param {...any} fnArgs - Arguments for the function
+     */
     function callBackend(fnName, ...fnArgs) {
       return new Promise((resolve, reject) => {
         google.script.run
           .withSuccessHandler((res) => resolve(res))
-          .withFailureHandler((err) => reject(err))[fnName](...fnArgs);
+          .withFailureHandler((err) => reject(err))
+          [fnName](...fnArgs);
       });
     }
     /**
@@ -50,7 +59,7 @@
             (btn) =>
               html`<sl-button
                 slot="footer"
-                variant="primary"
+                variant=${btn?.variant ?? "primary"}
                 @click=${btn.onClick}
                 >${btn.text}</sl-button
               >`
@@ -58,7 +67,6 @@
         </sl-dialog>
       `;
     };
-    let elementEffects = {};
     const now = new Date();
     const currYear = now.getFullYear();
     const currMonth = now.getMonth();
@@ -69,10 +77,8 @@
       state.Effect((s) => {
         const element = document.getElementById(elementId);
         if (element) {
-          console.log(`#${elementId} found`)
           elementEffectFn(element, state);
         } else {
-          console.log(`#${elementId} not found`)
         }
       }, stateKeys);
 
@@ -80,313 +86,453 @@
     };
 
     const View = (state) => {
-      console.log(elementEffects);
-      for (const [stateKey, elementDataMap] of Object.entries(elementEffects)) {
-        for (const [elId, elemProp] of Object.entries(elementDataMap)) {
-          const effectFn = (state) => {
-            const el = document.getElementById(elId);
-            if (el) {
-              console.log(
-                `found: Setting ${elId}.${elemProp} to ${state.Evaluate(
-                  stateKey
-                )}`
-              );
-              el[elemProp] = state.Evaluate(stateKey);
-            } else {
-              console.log(`Error could not find element ${elId}`);
-            }
-          };
-          effectFn.toString = () => [stateKey, elId, elemProp].join("-");
-          state.Effect(effectFn);
-        }
-      }
-      elementEffects = {};
-      /*
-      
-      */
       return state.HTML`
-      <section>
-          <h2>Categories</h2>
-          <data-table id=${elementEffect(
-            state,
-            "categories-data-table",
-            (el, { categories }) => {
-              el.columns = [
-                {
-                  header: "Category",
-                  key: "name",
-                },
-                {
-                  header: "Actions",
-                  valueRenderer: (obj) => {
-                    return litHtml`<div style="display: flex; gap: 0.4rem">
-                      <sl-button
-                        size="small"
-                        @click=${() => {
-                          Update({ selectedCategory: obj });
-                        }}
-                      >
-                        View
-                      </sl-button>
-                    </div>`;
-                  },
-                },
-              ];
-              el.data = categories;
-            },
-            "categories"
-          )}></data-table>
-          ${Dialog(state, {
-            title: "Category",
-            requestCloseHandler: () => Update({ selectedCategory: null }),
-            open: state.selectedCategory !== null,
-            buttons: [
-              {
-                text: "Save",
-                onClick: (e) => {
-                  try {
-                    const name =
-                      document.getElementById("category-name-input")?.value ??
-                      "Unnamed Category";
-                    const includes = JSON.parse(
-                      document.getElementById("category-includes-input")
-                        ?.value ?? "[]"
-                    );
-                    const excludes = JSON.parse(
-                      document.getElementById("category-excludes-input")
-                        ?.value ?? "[]"
-                    );
-                    const categoryData = {
-                      ...state.selectedCategory,
-                      name,
-                      includes,
-                      excludes,
-                    };
-                    google.script.run
-                      .withSuccessHandler((updatedCategory) => {
-                        const newCategories = [...state.categories];
-                        const catIndex = newCategories.findIndex(
-                          (c) => c.id === updatedCategory.id
-                        );
-                        if (catIndex > -1) {
-                          newCategories[catIndex] = updatedCategory;
-                        } else {
-                          newCategories.push(updatedCategory);
-                        }
-                        Update({
-                          selectedCategory: null,
-                          categories: newCategories,
-                        });
-                      })
-                      .withFailureHandler((err) =>
-                        alert(`Error updating category: ${err}`)
-                      )
-                      .categoryRepoCall("createOrUpdateOne", categoryData);
-                  } catch (err) {
-                    alert(`Unable to save data. Error: ${err}`);
-                  }
-                },
-              },
-              {
-                text: "Close",
-                onClick: () => Update({ selectedCategory: null }),
-              },
-            ],
-            content: () =>
-              state.selectedCategory !== null
-                ? html`
-                    <div
-                      style="display:flex; flex-direction: column; gap: 0.6rem"
-                    >
-                      <label for="category-name-input">Name</label>
-                      <sl-input
-                        type="text"
-                        id="category-name-input"
-                        placeholder="Groceries"
-                        value=${state.selectedCategory?.name ?? ""}
-                      />
-                      <label for="category-includes-input">Includes</label>
-                      <sl-textarea
-                        filled
-                        id="category-includes-input"
-                        value=${JSON.stringify(
-                          state.selectedCategory?.includes ?? [],
-                          null,
-                          2
-                        )}
-                      >
-                      </sl-textarea>
-                      <label for="category-excludes-input">Excludes</label>
-                      <sl-textarea
-                        filled
-                        id="category-excludes-input"
-                        value=${JSON.stringify(
-                          state.selectedCategory?.excludes ?? [],
-                          null,
-                          2
-                        )}
-                      >
-                      </sl-textarea>
-                    </div>
-                  `
-                : "",
-          })}
-        </section>
-        <section>
-        
-            <h2>Transactions</h2>
-            <div>
-              <sl-button-group label="Alignment">
+          <section>
+              <h2>Categories</h2>
+              <div style="width: 100%; display: flex; justify-content: flex-end">
                 <sl-button @click=${() => {
-                  google.script.run
-                    .withFailureHandler((err) => {
-                      alert(
-                        `Unable to fetch Plaid transactions! Error: ${err}`
-                      );
-                    })
-                    .withSuccessHandler((data) => {
-                      alert(`Success: ${JSON.stringify(data)}`);
-                    })
-                    .fetchPlaidTransactions();
-                }}>Import</sl-button>
-                <sl-button @click=${() => {
-                  Update({ selectedPlaidConfig: state.user.plaid });
+                  Update({ selectedCategory: {} });
                 }}>
-                  <sl-icon slot="prefix" name="gear"></sl-icon>
-                  Plaid Settings
-                </sl-button>
-              </sl-button-group>
-            </div>
-            <form id="transactions-table-form" @submit=${(e) => {
-              e.preventDefault();
-              const form = document.getElementById("transactions-table-form");
-              const formData = new FormData(form);
-              const formObj = Object.fromEntries([...formData.entries()]);
-              callBackend("loadTransactions").then(
-                (res) => {
-                  Update({
-                    transactions: res,
-                  });
-                },
-                (err) => {
-                  alert(`Unable to display transactions! Error: ${err}`);
-                }
-              );
-
-              // google.script.run
-              //   .withFailureHandler((err) => {
-              //     alert(`Unable to display transactions! Error: ${err}`);
-              //   })
-              //   .withSuccessHandler((transactionsData) => {})
-              //   .loadTransactions();
-            }}>
-              <div style="display: flex; justify-content: start">
-                <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="small" value=${
-                  startOfMonthDate.toISOString().split("T")[0]
-                }></sl-input>
-                <sl-input type="date" name="end" id="transactions-end-date" help-text="End" size="small" value=${
-                  endOfMonthDate.toISOString().split("T")[0]
-                }></sl-input>
-                <sl-button type="submit" size="small">Display</sl-button>
-                </div>
-            </form>
-            <div style="overflow: scroll;">
-              <data-table id=${elementEffect(
+                  New
+                </sl-button>  
+              </div>
+              <table id=${elementEffect(
                 state,
-                "transactions-data-table",
-                (el, { transactions }) => {
-                  el.columns = _transactionTableCols;
-                  el.data = transactions;
-                },
-                "transactions"
-              )}></data-table>
-            </div>
-            ${Dialog(state, {
-              title: "Plaid Settings",
-              requestCloseHandler: () => Update({ selectedPlaidConfig: null }),
-              open: state.selectedPlaidConfig !== null,
-              content: () => html`
-                <div style="display: flex; flex-direction: column; gap: 0.5rem">
-                  <label for="plaid-url">Plaid API URL</label>
-                  <sl-input
-                    type="text"
-                    id="plaid-url"
-                    value=${state.user.plaid.url}
-                    placeholder="Enter your Plaid API Endpoint URL"
-                  />
-                  <label for="plaid-client-id">Plaid Client Id</label>
-                  <sl-input
-                    type="text"
-                    id="plaid-client-id"
-                    value=${state.user.plaid.clientId}
-                    placeholder="Enter your Plaid Client Id"
-                  />
-                  <label for="plaid-secret">Plaid Secret</label>
-                  <sl-input
-                    type="password"
-                    id="plaid-secret"
-                    value=${state.user.plaid.secret}
-                    placeholder="Enter your Plaid Secret"
-                  />
-                  <label for="plaid-access-token">Plaid Access Token</label>
-                  <sl-input
-                    type="text"
-                    id="plaid-access-token"
-                    value=${state.user.plaid.accessToken}
-                    placeholder="Access token"
-                  />
-                </div>
-              `,
-              buttons: [
-                {
-                  text: "Save",
-                  onClick: () => {
-                    try {
-                      const newPlaidConfig = {
-                        url: document.getElementById("plaid-url")?.value ?? "",
-                        clientId:
-                          document.getElementById("plaid-client-id")?.value ??
-                          "",
-                        secret:
-                          document.getElementById("plaid-secret")?.value ?? "",
-                        accessToken:
-                          document.getElementById("plaid-access-token")
-                            ?.value ?? "",
-                      };
+                "categories-data-table-2",
+                (el, { categories }) => {
+                  const columnKeys = ["id", "name"];
+                  const columns = [
+                    {
+                      title: "ID",
+                      visible: false,
+                    },
+                    {
+                      title: "Category",
+                    },
+                    {
+                      title: "",
+                    },
+                  ];
+                  const rows = [];
+                  for (const category of categories) {
+                    const row = columnKeys.map((k) => category?.[k] ?? "");
+                    const div = document.createElement("div");
+                    render(
+                      div,
+                      uh`<sl-icon @click=${() => {
+                        Update({ selectedCategory: category });
+                      }} name="three-dots-vertical"></sl-icon>`
+                    );
+                    row.push(div);
+                    rows.push(row);
+                  }
+                  let table = new DataTable("#" + el.id, {
+                    retrieve: true,
+                  });
+                  table.destroy();
+                  table = new DataTable("#" + el.id, {
+                    columns: columns,
+                    paging: false,
+                    searching: false,
+                    info: false,
+                    data: rows,
+                  });
+                  // TODO check that the array data has actually changed
+                  table.on("click", "tbody tr", function () {
+                    const data = table.row(this).data();
+                    if (data === undefined) {
+                      return;
+                    }
+                    const id = data[0];
+                    Update({
+                      selectedCategory: state.categories.find(
+                        (c) => c.id === id
+                      ),
+                    });
+                    // alert("You clicked on " + JSON.stringify(data) + "'s row");
+                  });
+                }
+              )}></table>
+              ${Dialog(state, {
+                title: state?.selectedCategory?.id
+                  ? "Category"
+                  : "New Category",
+                requestCloseHandler: () => Update({ selectedCategory: null }),
+                open: state.selectedCategory !== null,
+                buttons: [
+                  {
+                    text: "Delete",
+                    variant: "danger",
+                    // TODO get disabled boolean prop working
+                    disabled: state?.selectedCategory?.id ? false : true,
+                    onClick: (e) => {
+                      if (
+                        state?.selectedCategory?.id &&
+                        confirm(
+                          `Are you sure you want to delete category ${state.selectedCategory.name}?`
+                        )
+                      ) {
+                        const idToDelete = state.selectedCategory.id;
+                        callBackend(
+                          "categoryRepoCall",
+                          "deleteOne",
+                          idToDelete
+                        ).then(
+                          (res) => {
+                            const newCategories = [...state.categories];
+                            const catIndex = state.categories.findIndex(
+                              (c) => c.id === idToDelete
+                            );
+                            if (catIndex > -1) {
+                              newCategories.splice(catIndex, 1);
+                            }
+                            Update({
+                              categories: newCategories,
+                              selectedCategory: null,
+                            });
+                          },
+                          (err) => {
+                            alert(`Error deleting category: ${err}`);
+                          }
+                        );
+                      }
+                    },
+                  },
+                  {
+                    text: "Save",
+                    onClick: (e) => {
+                      try {
+                        const name =
+                          document.getElementById("category-name-input")
+                            ?.value ?? "Unnamed Category";
+                        const includes = JSON.parse(
+                          document.getElementById("category-includes-input")
+                            ?.value ?? "[]"
+                        );
+                        const excludes = JSON.parse(
+                          document.getElementById("category-excludes-input")
+                            ?.value ?? "[]"
+                        );
+                        const categoryData = {
+                          ...state.selectedCategory,
+                          name,
+                          includes,
+                          excludes,
+                        };
+                        google.script.run
+                          .withSuccessHandler((updatedCategory) => {
+                            const newCategories = [...state.categories];
+                            const catIndex = newCategories.findIndex(
+                              (c) => c.id === updatedCategory.id
+                            );
+                            if (catIndex > -1) {
+                              newCategories[catIndex] = updatedCategory;
+                            } else {
+                              newCategories.push(updatedCategory);
+                            }
+                            Update({
+                              selectedCategory: null,
+                              categories: newCategories,
+                            });
+                          })
+                          .withFailureHandler((err) =>
+                            alert(`Error updating category: ${err}`)
+                          )
+                          .categoryRepoCall("createOrUpdateOne", categoryData);
+                      } catch (err) {
+                        alert(`Unable to save data. Error: ${err}`);
+                      }
+                    },
+                  },
+                  {
+                    text: "Close",
+                    onClick: () => Update({ selectedCategory: null }),
+                  },
+                ],
+                content: () =>
+                  state.selectedCategory !== null
+                    ? html`
+                        <div
+                          style="display:flex; flex-direction: column; gap: 0.6rem"
+                        >
+                          <label for="category-name-input">Name</label>
+                          <sl-input
+                            type="text"
+                            id="category-name-input"
+                            placeholder="Groceries"
+                            value=${state.selectedCategory?.name ?? ""}
+                          />
+                          <label for="category-includes-input">Includes</label>
+                          <sl-textarea
+                            filled
+                            id="category-includes-input"
+                            value=${JSON.stringify(
+                              state.selectedCategory?.includes ?? [],
+                              null,
+                              2
+                            )}
+                          >
+                          </sl-textarea>
+                          <label for="category-excludes-input">Excludes</label>
+                          <sl-textarea
+                            filled
+                            id="category-excludes-input"
+                            value=${JSON.stringify(
+                              state.selectedCategory?.excludes ?? [],
+                              null,
+                              2
+                            )}
+                          >
+                          </sl-textarea>
+                        </div>
+                      `
+                    : "",
+              })}
+            </section>
+            <section>
+
+                <h2>Transactions</h2>
+                <div>
+                  <sl-button-group label="Alignment">
+                    <sl-button @click=${() => {
                       google.script.run
                         .withFailureHandler((err) => {
-                          alert(`Unable to save Plaid settings! Error: ${err}`);
+                          alert(
+                            `Unable to fetch Plaid transactions! Error: ${err}`
+                          );
                         })
-                        .withSuccessHandler(() => {
-                          const user = state.user;
-                          user.plaid = newPlaidConfig;
-                          Update({
-                            selectedPlaidConfig: null,
-                            user: user,
-                          });
+                        .withSuccessHandler((data) => {
+                          alert(`Success: ${JSON.stringify(data)}`);
                         })
-                        .saveUser(user);
-                    } catch (err) {
-                      alert(`Unable to save Plaid settings! Error: ${err}`);
+                        .fetchPlaidTransactions();
+                    }}>Import</sl-button>
+                    <sl-button @click=${() => {
+                      Update({ selectedPlaidConfig: state.user.plaid });
+                    }}>
+                      <sl-icon slot="prefix" name="gear"></sl-icon>
+                      Plaid Settings
+                    </sl-button>
+                  </sl-button-group>
+                </div>
+                <form id="transactions-table-form" @submit=${(e) => {
+                  e.preventDefault();
+                  const form = document.getElementById(
+                    "transactions-table-form"
+                  );
+                  const formData = new FormData(form);
+                  const formObj = Object.fromEntries([...formData.entries()]);
+                  callBackend("loadTransactions").then(
+                    (res) => {
+                      Update({
+                        transactions: res,
+                      });
+                    },
+                    (err) => {
+                      alert(`Unable to display transactions! Error: ${err}`);
                     }
-                  },
-                },
-                {
-                  text: "Close",
-                  onClick: (e) => Update({ selectedPlaidConfig: null }),
-                },
-              ],
-            })}
-            
-          </section>
-          
-        <section>
-  <h2>Budget</h2>
-            <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 0.4rem">
+                  );
 
-            <sl-select id="select-budget" placeholder="Select a budget" value=${
-              state.selectedBudget?.id ?? null
-            } @sl-input=${(e) => {
+                  // google.script.run
+                  //   .withFailureHandler((err) => {
+                  //     alert(`Unable to display transactions! Error: ${err}`);
+                  //   })
+                  //   .withSuccessHandler((transactionsData) => {})
+                  //   .loadTransactions();
+                }}>
+                  <div style="display: flex; justify-content: start">
+                    <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="small" value=${
+                      startOfMonthDate.toISOString().split("T")[0]
+                    }></sl-input>
+                    <sl-input type="date" name="end" id="transactions-end-date" help-text="End" size="small" value=${
+                      endOfMonthDate.toISOString().split("T")[0]
+                    }></sl-input>
+                    <sl-button type="submit" size="small">Display</sl-button>
+                    </div>
+                </form>
+                <div >
+                  <table id=${elementEffect(
+                    state,
+                    "transactions-data-table-2",
+                    (el, { transactions }) => {
+                      const columnKeys = [
+                        "id",
+                        "date",
+                        "name",
+                        "amount",
+                        "source",
+                      ];
+                      const columns = [
+                        {
+                          title: "ID",
+                          visible: false,
+                        },
+                        {
+                          title: "Date",
+                        },
+                        {
+                          title: "Name",
+                        },
+                        {
+                          title: "Amount",
+                        },
+                        {
+                          title: "Source",
+                        },
+                      ];
+                      const rows = [];
+                      for (const transaction of transactions) {
+                        const row = columnKeys.map(
+                          (k) => transaction?.[k] ?? ""
+                        );
+                        // right align amount
+                        const amount = row[3];
+                        console.log(row);
+                        const div = document.createElement("div");
+                        render(
+                          div,
+                          uh`<div style="text-align: end;">${amount.toFixed(
+                            2
+                          )}</div>`
+                        );
+                        row[3] = div;
+                        rows.push(row);
+                      }
+                      // TODO check that the array data has actually changed instead of rebuilding table
+                      let table = new DataTable("#" + el.id, {
+                        retrieve: true,
+                      });
+                      table.destroy();
+                      table = new DataTable("#" + el.id, {
+                        columns: columns,
+                        data: rows,
+                      });
+                      table.on("click", "tbody tr", function () {
+                        const data = table.row(this).data();
+                        if (data === undefined) {
+                          return;
+                        }
+                        console.log(`row data: ${data}`);
+                        const id = data[0];
+                        Update({
+                          selectedTransaction: state.transactions.find(
+                            (t) => t.id === id
+                          ),
+                        });
+                      });
+                    },
+                    "transactions"
+                  )} class="display"></table>
+                  ${Dialog(state, {
+                    title: "Transaction Details",
+                    requestCloseHandler: () =>
+                      Update({ selectedTransaction: null }),
+                    open: state.selectedTransaction !== null,
+                    buttons: [
+                      {
+                        text: "Close",
+                        onClick: () => Update({ selectedTransaction: null }),
+                      },
+                    ],
+                    content: () =>
+                      state.selectedTransaction !== null
+                        ? html` <sl-tree> </sl-tree> `
+                        : "",
+                  })}
+            
+                </div>
+                ${Dialog(state, {
+                  title: "Plaid Settings",
+                  requestCloseHandler: () =>
+                    Update({ selectedPlaidConfig: null }),
+                  open: state.selectedPlaidConfig !== null,
+                  content: () => html`
+                    <div
+                      style="display: flex; flex-direction: column; gap: 0.5rem"
+                    >
+                      <label for="plaid-url">Plaid API URL</label>
+                      <sl-input
+                        type="text"
+                        id="plaid-url"
+                        value=${state.user.plaid.url}
+                        placeholder="Enter your Plaid API Endpoint URL"
+                      />
+                      <label for="plaid-client-id">Plaid Client Id</label>
+                      <sl-input
+                        type="text"
+                        id="plaid-client-id"
+                        value=${state.user.plaid.clientId}
+                        placeholder="Enter your Plaid Client Id"
+                      />
+                      <label for="plaid-secret">Plaid Secret</label>
+                      <sl-input
+                        type="password"
+                        id="plaid-secret"
+                        value=${state.user.plaid.secret}
+                        placeholder="Enter your Plaid Secret"
+                      />
+                      <label for="plaid-access-token">Plaid Access Token</label>
+                      <sl-input
+                        type="text"
+                        id="plaid-access-token"
+                        value=${state.user.plaid.accessToken}
+                        placeholder="Access token"
+                      />
+                    </div>
+                  `,
+                  buttons: [
+                    {
+                      text: "Save",
+                      onClick: () => {
+                        try {
+                          const newPlaidConfig = {
+                            url:
+                              document.getElementById("plaid-url")?.value ?? "",
+                            clientId:
+                              document.getElementById("plaid-client-id")
+                                ?.value ?? "",
+                            secret:
+                              document.getElementById("plaid-secret")?.value ??
+                              "",
+                            accessToken:
+                              document.getElementById("plaid-access-token")
+                                ?.value ?? "",
+                          };
+                          google.script.run
+                            .withFailureHandler((err) => {
+                              alert(
+                                `Unable to save Plaid settings! Error: ${err}`
+                              );
+                            })
+                            .withSuccessHandler(() => {
+                              const user = state.user;
+                              user.plaid = newPlaidConfig;
+                              Update({
+                                selectedPlaidConfig: null,
+                                user: user,
+                              });
+                            })
+                            .saveUser(user);
+                        } catch (err) {
+                          alert(`Unable to save Plaid settings! Error: ${err}`);
+                        }
+                      },
+                    },
+                    {
+                      text: "Close",
+                      onClick: (e) => Update({ selectedPlaidConfig: null }),
+                    },
+                  ],
+                })}
+
+              </section>
+
+            <section>
+      <h2>Budget</h2>
+                <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 0.4rem">
+
+                <sl-select id="select-budget" placeholder="Select a budget" value=${
+                  state.selectedBudget?.id ?? null
+                } @sl-input=${(e) => {
         const selectedId = document.getElementById("select-budget")?.value;
         if (selectedId === "new-budget") {
           Update({ selectedBudget: { name: "" } });
@@ -399,62 +545,67 @@
           }
         }
       }}>
-              ${state.budgets.map((b) => {
-                return html` <sl-option value="${b.id}">${b.name}</sl-option> `;
-              })}
-              <sl-option value="new-budget">New Budget</sl-option>
-            </sl-select>
-            <sl-button @click=${() => {
-              let newName = prompt(
-                "Budget Name:",
-                state.selectedBudget.name
-              )?.trim();
-              if (newName && newName != state.selectedBudget.name) {
-                const newBudget = { ...state.selectedBudget, name: newName };
-                google.script.run
-                  .withSuccessHandler((updatedBudget) => {
-                    const budgetIndex = state.budgets.findIndex(
-                      (c) => c.id === updatedBudget.id
+                  ${state.budgets.map((b) => {
+                    return html`
+                      <sl-option value="${b.id}">${b.name}</sl-option>
+                    `;
+                  })}
+                  <sl-option value="new-budget">New Budget</sl-option>
+                </sl-select>
+                <sl-button @click=${() => {
+                  let newName = prompt(
+                    "Budget Name:",
+                    state.selectedBudget.name
+                  )?.trim();
+                  if (newName && newName != state.selectedBudget.name) {
+                    const newBudget = {
+                      ...state.selectedBudget,
+                      name: newName,
+                    };
+                    google.script.run
+                      .withSuccessHandler((updatedBudget) => {
+                        const budgetIndex = state.budgets.findIndex(
+                          (c) => c.id === updatedBudget.id
+                        );
+                        if (budgetIndex > -1) {
+                          state.budgets[budgetIndex] = updatedBudget;
+                        } else {
+                          state.budgets.push(updatedBudget);
+                        }
+                        Update({
+                          selectedBudget: updatedBudget,
+                          budgets: state.budgets,
+                        });
+                      })
+                      .withFailureHandler((err) =>
+                        alert(`Error updating budget: ${err}`)
+                      )
+                      .budgetRepoCall("createOrUpdateOne", newBudget);
+                  }
+                }}>Rename</sl-button>
+                <sl-button @click=${() => {
+                  if (confirm(`Delete ${state.selectedBudget.name}?`)) {
+                    const foundBudgetIndex = state.budgets.findIndex(
+                      (b) => b.id === state.selectedBudget.id
                     );
-                    if (budgetIndex > -1) {
-                      state.budgets[budgetIndex] = updatedBudget;
-                    } else {
-                      state.budgets.push(updatedBudget);
+                    if (foundBudgetIndex > -1) {
+                      google.script.run
+                        .withSuccessHandler(() => {
+                          Update({
+                            selectedBudget: null,
+                            budgets: state.budgets.splice(foundBudgetIndex, 1),
+                          });
+                        })
+                        .withFailureHandler((err) =>
+                          alert(`Error renaming budget: ${err}`)
+                        )
+                        .budgetRepoCall("deleteOne", state.selectedBudget.id);
                     }
-                    Update({
-                      selectedBudget: updatedBudget,
-                      budgets: state.budgets,
-                    });
-                  })
-                  .withFailureHandler((err) =>
-                    alert(`Error updating budget: ${err}`)
-                  )
-                  .budgetRepoCall("createOrUpdateOne", newBudget);
-              }
-            }}>Rename</sl-button>
-            <sl-button @click=${() => {
-              if (confirm(`Delete ${state.selectedBudget.name}?`)) {
-                const foundBudgetIndex = state.budgets.findIndex(
-                  (b) => b.id === state.selectedBudget.id
-                );
-                if (foundBudgetIndex > -1) {
-                  google.script.run
-                    .withSuccessHandler(() => {
-                      Update({
-                        selectedBudget: null,
-                        budgets: state.budgets.splice(foundBudgetIndex, 1),
-                      });
-                    })
-                    .withFailureHandler((err) =>
-                      alert(`Error renaming budget: ${err}`)
-                    )
-                    .budgetRepoCall("deleteOne", state.selectedBudget.id);
-                }
-              }
-            }}>Delete</sl-button>
-            </div>
-</section>
-          `;
+                  }
+                }}>Delete</sl-button>
+                </div>
+    </section>
+              `;
     };
     const _transactionTableCols = [
       {
@@ -479,6 +630,7 @@
     ];
     const State = {
       View,
+      Debug: true,
       Element: document.getElementById("app"),
       user: {
         plaid: {
@@ -493,6 +645,7 @@
       transactions: [],
       selectedBudget: null,
       selectedCategory: null,
+      selectedTransaction: null,
       selectedPlaidConfig: null,
     };
     const Update = Nanny(State);
@@ -500,6 +653,7 @@
       customElements.whenDefined("data-table"),
       customElements.whenDefined("sl-button"),
       customElements.whenDefined("sl-dialog"),
+      // customElements.whenDefined("sl-tree"),
     ]);
     // Custom components are registered now! Add
     // the `ready` class so the UI fades in.
@@ -541,8 +695,33 @@
     }
 
     /*
-      Util function for getting the first and last day of the month
-      */
+     * Convert an object into an array of sl-tree-item elements
+     */
+    function objectToTreeItems(object) {
+      const entries = Object.entries(object);
+      const nonObjectEntries = entries.filter(
+        (e) => e[1].constructor !== Object
+      );
+      const objectEntries = entries.filter((e) => e[1].constructor === Object);
+      const items = [];
+
+      items.push(
+        ...nonObjectEntries.map(([k, v]) => {
+          const div = document.createElement("div");
+          render(
+            div,
+            uh`<sl-tree-item><pre>${
+              k + ": " + JSON.stringify(v)
+            }</pre></sl-tree-item>`
+          );
+          return div;
+        })
+      );
+      return items;
+    }
+    /*
+     * Util function for getting the first and last day of the month
+     */
     function getFirstAndLastDateOfMonth({
       year = undefined,
       month = undefined,
@@ -560,8 +739,8 @@
       };
     }
     /*
-    Util function to populate a table from a list of json objects
-    */
+        Util function to populate a table from a list of json objects
+        */
     function populateTable(table, data = undefined, columns = undefined) {
       const tableHead = table.querySelector("thead");
       const tableBody = table.querySelector("tbody");
