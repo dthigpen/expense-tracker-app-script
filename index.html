@@ -89,11 +89,131 @@
       return elementId;
     };
 
+    /**
+     * Returns a hash code from a string
+     * @param  {String} str The string to hash.
+     * @return {Number}    A 32bit integer
+     * @see http://werxltd.com/wp/2010/05/13/javascript-implementation-of-javas-string-hashcode-method/
+     */
+    function hashCode(str) {
+      let hash = 0;
+      for (let i = 0, len = str.length; i < len; i++) {
+        let chr = str.charCodeAt(i);
+        hash = (hash << 5) - hash + chr;
+        hash |= 0; // Convert to 32bit integer
+      }
+      return hash;
+    }
     const View = (state) => {
+      console.log(hashCode(state?.selectedBudget?.name ?? '') + '_' + state?.selectedBudget?.id)
       return state.HTML`
+      <section>
+              <h2>Budget</h2>
+                <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 0.4rem">
+                <sl-select id="select-budget" placeholder="Select a budget" value=${
+                  state.selectedBudget ? (hashCode(state?.selectedBudget?.name ?? '') + '_' + state?.selectedBudget?.id) : null
+                } @sl-input=${(e) => {
+                  const selectedValue = document.getElementById("select-budget")?.value;
+                  const selectedId = selectedValue.slice(selectedValue.indexOf('_') + 1)
+                  const selectedBudget = state.budgets.find((b) => b.id === selectedId);
+                  if (selectedBudget) {
+                    Update({ selectedBudget });
+                  } else {
+                    alert(`Unable to find budget with id: ${selectedId}`);
+                  }
+                }}>
+                  ${state.budgets.map((b) => {
+                    return nannyHtml`
+                      <sl-option value="${hashCode(state?.selectedBudget?.name ?? '') + '_' + state?.selectedBudget?.id}">${b.name}</sl-option>
+                    `;
+                  })}
+                </sl-select>
+                <sl-button @click=${() => {
+                  let newName = prompt(
+                    "Budget Name:",
+                    state.selectedBudget.name
+                  )?.trim();
+                  if (newName && newName != state.selectedBudget.name) {
+                    const newBudget = {
+                      ...state.selectedBudget,
+                      name: newName,
+                    };
+                    google.script.run
+                      .withSuccessHandler((updatedBudget) => {
+                        const budgetIndex = state.budgets.findIndex(
+                          (c) => c.id === updatedBudget.id
+                        );
+                        if (budgetIndex > -1) {
+                          state.budgets[budgetIndex] = updatedBudget;
+                        } else {
+                          state.budgets.push(updatedBudget);
+                        }
+                        Update({
+                          selectedBudget: updatedBudget,
+                          budgets: state.budgets,
+                        });
+                      })
+                      .withFailureHandler((err) =>
+                        alert(`Error updating budget: ${err}`)
+                      )
+                      .budgetRepoCall("createOrUpdateOne", newBudget);
+                  }
+                }}>Rename</sl-button>
+                <sl-button @click=${() => {
+                  if (confirm(`Delete ${state.selectedBudget.name}?`)) {
+                    const foundBudgetIndex = state.budgets.findIndex(
+                      (b) => b.id === state.selectedBudget.id
+                    );
+                    if (foundBudgetIndex > -1) {
+                      google.script.run
+                        .withSuccessHandler(() => {
+                          Update({
+                            selectedBudget: null,
+                            budgets: state.budgets.splice(foundBudgetIndex, 1),
+                          });
+                        })
+                        .withFailureHandler((err) =>
+                          alert(`Error renaming budget: ${err}`)
+                        )
+                        .budgetRepoCall("deleteOne", state.selectedBudget.id);
+                    }
+                  }
+                }}>Delete</sl-button>
+                <sl-button variant="primary" @click=${() => {
+                  const budgetName = prompt("Budget Name:").trim();
+                  if (budgetName.length !== 0) {
+                    const newBudget = {
+                      name: budgetName,
+                      categoryIds: [],
+                      actions: [],
+                    };
+                    // call backend to save new budget
+                    // add budget to state.budgets
+                    callBackend(
+                      "budgetRepoCall",
+                      "createOrUpdateOne",
+                      newBudget
+                    )
+                      .then((savedBudget) => {
+                        Update({
+                          budgets: [...state.budgets, savedBudget],
+                          selectedBudget: savedBudget,
+                        });
+                      })
+                      .catch((err) => {
+                        alert(
+                          `Unable to create budget ${budgetName}. Error: ${err}`
+                        );
+                      });
+                  }
+                }}>
+                  New
+                </sl-button>
+                </div>
+          </section>
           <section>
               <h2>Categories</h2>
-              <div style="width: 100%; display: flex; justify-content: flex-end">
+              <div style="width: 100%; display: flex; justify-content: flex-end; gap: 0.4rem">
                 <sl-button @click=${() => {
                   Update({ selectedCategory: {} });
                 }}>
@@ -102,7 +222,7 @@
               </div>
               <table id=${elementEffect(
                 state,
-                "categories-data-table-2",
+                "categories-data-table",
                 (el, { categories }) => {
                   const columnKeys = ["id", "name"];
                   const columns = [
@@ -119,7 +239,8 @@
                     },
                   ];
                   const rows = [];
-                  for (const category of categories) {
+                  const budgetCategories = categories.filter(c => state.selectedBudget.categoryIds.includes(c.id))
+                  for (const category of budgetCategories) {
                     const row = columnKeys.map((k) => category?.[k] ?? "");
                     const div = document.createElement("div");
                     render(
@@ -309,7 +430,7 @@
                           );
                         }
                       );
-                    }}>Import</sl-button>
+                    }}>Fetch New</sl-button>
                     <sl-button @click=${() => {
                       Update({ selectedPlaidConfig: state.user.plaid });
                     }}>
@@ -340,14 +461,14 @@
                     }
                   );
                 }}>
-                  <div style="display: flex; justify-content: start; gap: 1rem">
-                    <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="small" value=${
+                  <div style="display: flex; justify-content: start; gap: 0.4rem">
+                    <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="medium" value=${
                       startOfMonthDate.toISOString().split("T")[0]
                     }></sl-input>
-                    <sl-input type="date" name="end" id="transactions-end-date" help-text="End" size="small" value=${
+                    <sl-input type="date" name="end" id="transactions-end-date" help-text="End" size="medium" value=${
                       endOfMonthDate.toISOString().split("T")[0]
                     }></sl-input>
-                    <sl-button type="submit" size="small">Display</sl-button>
+                    <sl-button type="submit" size="medium">Display</sl-button>
                     </div>
                 </form>
                 <div >
@@ -360,6 +481,7 @@
                         "date",
                         "name",
                         "amount",
+                        "account",
                         "source",
                       ];
                       const columns = [
@@ -389,6 +511,9 @@
                             }
                             return amount;
                           },
+                        },
+                        {
+                          title: "Account",
                         },
                         {
                           title: "Source",
@@ -500,6 +625,7 @@
                               document.getElementById("plaid-access-token")
                                 ?.value ?? "",
                           };
+                          const user = {...state.user, plaid: newPlaidConfig}
                           google.script.run
                             .withFailureHandler((err) => {
                               alert(
@@ -528,86 +654,6 @@
                 })}
 
               </section>
-
-            <section>
-      <h2>Budget</h2>
-                <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 0.4rem">
-
-                <sl-select id="select-budget" placeholder="Select a budget" value=${
-                  state.selectedBudget?.id ?? null
-                } @sl-input=${(e) => {
-        const selectedId = document.getElementById("select-budget")?.value;
-        if (selectedId === "new-budget") {
-          Update({ selectedBudget: { name: "" } });
-        } else {
-          const selectedBudget = state.budgets.find((b) => b.id === selectedId);
-          if (selectedBudget) {
-            Update({ selectedBudget });
-          } else {
-            alert(`Unable to find budget with id: ${selectedId}`);
-          }
-        }
-      }}>
-                  ${state.budgets.map((b) => {
-                    return nannyHtml`
-                      <sl-option value="${b.id}">${b.name}</sl-option>
-                    `;
-                  })}
-                  <sl-option value="new-budget">New Budget</sl-option>
-                </sl-select>
-                <sl-button @click=${() => {
-                  let newName = prompt(
-                    "Budget Name:",
-                    state.selectedBudget.name
-                  )?.trim();
-                  if (newName && newName != state.selectedBudget.name) {
-                    const newBudget = {
-                      ...state.selectedBudget,
-                      name: newName,
-                    };
-                    google.script.run
-                      .withSuccessHandler((updatedBudget) => {
-                        const budgetIndex = state.budgets.findIndex(
-                          (c) => c.id === updatedBudget.id
-                        );
-                        if (budgetIndex > -1) {
-                          state.budgets[budgetIndex] = updatedBudget;
-                        } else {
-                          state.budgets.push(updatedBudget);
-                        }
-                        Update({
-                          selectedBudget: updatedBudget,
-                          budgets: state.budgets,
-                        });
-                      })
-                      .withFailureHandler((err) =>
-                        alert(`Error updating budget: ${err}`)
-                      )
-                      .budgetRepoCall("createOrUpdateOne", newBudget);
-                  }
-                }}>Rename</sl-button>
-                <sl-button @click=${() => {
-                  if (confirm(`Delete ${state.selectedBudget.name}?`)) {
-                    const foundBudgetIndex = state.budgets.findIndex(
-                      (b) => b.id === state.selectedBudget.id
-                    );
-                    if (foundBudgetIndex > -1) {
-                      google.script.run
-                        .withSuccessHandler(() => {
-                          Update({
-                            selectedBudget: null,
-                            budgets: state.budgets.splice(foundBudgetIndex, 1),
-                          });
-                        })
-                        .withFailureHandler((err) =>
-                          alert(`Error renaming budget: ${err}`)
-                        )
-                        .budgetRepoCall("deleteOne", state.selectedBudget.id);
-                    }
-                  }
-                }}>Delete</sl-button>
-                </div>
-    </section>
               `;
     };
     const State = {

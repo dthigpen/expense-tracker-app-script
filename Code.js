@@ -41,6 +41,7 @@ function convertPlaidTransaction(plaidTransaction) {
     date: plaidTransaction.date,
     name: plaidTransaction.name,
     amount: plaidTransaction.amount,
+    account: plaidTransaction.account_id,
     source: 'plaid',
     data: {...plaidTransaction}
   }
