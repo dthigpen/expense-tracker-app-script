@@ -105,26 +105,38 @@
       return hash;
     }
     const View = (state) => {
-      console.log(hashCode(state?.selectedBudget?.name ?? '') + '_' + state?.selectedBudget?.id)
+      console.log(
+        hashCode(state?.selectedBudget?.name ?? "") +
+          "_" +
+          state?.selectedBudget?.id
+      );
       return state.HTML`
       <section>
               <h2>Budget</h2>
                 <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 0.4rem">
                 <sl-select id="select-budget" placeholder="Select a budget" value=${
-                  state.selectedBudget ? (hashCode(state?.selectedBudget?.name ?? '') + '_' + state?.selectedBudget?.id) : null
+                  state.selectedBudget
+                    ? hashCode(state?.selectedBudget?.name ?? "") +
+                      "_" +
+                      state?.selectedBudget?.id
+                    : null
                 } @sl-input=${(e) => {
-                  const selectedValue = document.getElementById("select-budget")?.value;
-                  const selectedId = selectedValue.slice(selectedValue.indexOf('_') + 1)
-                  const selectedBudget = state.budgets.find((b) => b.id === selectedId);
-                  if (selectedBudget) {
-                    Update({ selectedBudget });
-                  } else {
-                    alert(`Unable to find budget with id: ${selectedId}`);
-                  }
-                }}>
+        const selectedValue = document.getElementById("select-budget")?.value;
+        const selectedId = selectedValue.slice(selectedValue.indexOf("_") + 1);
+        const selectedBudget = state.budgets.find((b) => b.id === selectedId);
+        if (selectedBudget) {
+          Update({ selectedBudget });
+        } else {
+          alert(`Unable to find budget with id: ${selectedId}`);
+        }
+      }}>
                   ${state.budgets.map((b) => {
                     return nannyHtml`
-                      <sl-option value="${hashCode(state?.selectedBudget?.name ?? '') + '_' + state?.selectedBudget?.id}">${b.name}</sl-option>
+                      <sl-option value="${
+                        hashCode(state?.selectedBudget?.name ?? "") +
+                        "_" +
+                        state?.selectedBudget?.id
+                      }">${b.name}</sl-option>
                     `;
                   })}
                 </sl-select>
@@ -239,7 +251,9 @@
                     },
                   ];
                   const rows = [];
-                  const budgetCategories = categories.filter(c => state.selectedBudget.categoryIds.includes(c.id))
+                  const budgetCategories = categories.filter((c) =>
+                    state.selectedBudget.categoryIds.includes(c.id)
+                  );
                   for (const category of budgetCategories) {
                     const row = columnKeys.map((k) => category?.[k] ?? "");
                     const div = document.createElement("div");
@@ -417,28 +431,6 @@
             <section>
 
                 <h2>Transactions</h2>
-                <div>
-                  <sl-button-group label="Alignment">
-                    <sl-button @click=${() => {
-                      callBackend("fetchPlaidTransactions").then(
-                        (data) => {
-                          alert(`Success: ${JSON.stringify(data)}`);
-                        },
-                        (err) => {
-                          alert(
-                            `Unable to fetch Plaid transactions! Error: ${err}`
-                          );
-                        }
-                      );
-                    }}>Fetch New</sl-button>
-                    <sl-button @click=${() => {
-                      Update({ selectedPlaidConfig: state.user.plaid });
-                    }}>
-                      <sl-icon slot="prefix" name="gear"></sl-icon>
-                      Plaid Settings
-                    </sl-button>
-                  </sl-button-group>
-                </div>
                 <form id="transactions-table-form" @submit=${(e) => {
                   e.preventDefault();
                   const form = document.getElementById(
@@ -447,7 +439,7 @@
                   const formData = new FormData(form);
                   const formObj = Object.fromEntries([...formData.entries()]);
                   callBackend(
-                    "loadTransactions",
+                    "fetchAndLoadTransactions",
                     formObj["start"],
                     formObj["end"]
                   ).then(
@@ -461,7 +453,8 @@
                     }
                   );
                 }}>
-                  <div style="display: flex; justify-content: start; gap: 0.4rem">
+                  <div style="display: flex; justify-content: space-between; gap: 0.4rem">
+                    <div style="display: flex; justify-content: start; gap: 0.4rem">
                     <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="medium" value=${
                       startOfMonthDate.toISOString().split("T")[0]
                     }></sl-input>
@@ -470,11 +463,19 @@
                     }></sl-input>
                     <sl-button type="submit" size="medium">Display</sl-button>
                     </div>
+                    <sl-button @click=${() => {
+                      Update({ selectedPlaidConfig: state.user.plaid });
+                    }}>
+                        <sl-icon slot="prefix" name="gear"></sl-icon>
+                        Import Settings
+                    </sl-button>
+                      
+                    </div>
                 </form>
-                <div >
+                <div>
                   <table id=${elementEffect(
                     state,
-                    "transactions-data-table-2",
+                    "transactions-data-table",
                     (el, { transactions }) => {
                       const columnKeys = [
                         "id",
@@ -611,15 +612,19 @@
                     {
                       text: "Clear Transactions",
                       onClick: () => {
-                        if(confirm(`Delete all saved transactions?`)) {
-                          callBackend('clearTransactionsData')
-                          .then(() => {
-                            alert('Cleared transaction data!')
-                          }, err => {
-                            alert(`Error while clearing transactions: ${err}`)
-                          })
+                        if (confirm(`Delete all saved transactions?`)) {
+                          callBackend("clearTransactionsData").then(
+                            () => {
+                              alert("Cleared transaction data!");
+                            },
+                            (err) => {
+                              alert(
+                                `Error while clearing transactions: ${err}`
+                              );
+                            }
+                          );
                         }
-                      }
+                      },
                     },
                     {
                       text: "Save",
@@ -638,7 +643,7 @@
                               document.getElementById("plaid-access-token")
                                 ?.value ?? "",
                           };
-                          const user = {...state.user, plaid: newPlaidConfig}
+                          const user = { ...state.user, plaid: newPlaidConfig };
                           google.script.run
                             .withFailureHandler((err) => {
                               alert(
@@ -712,26 +717,18 @@
         });
         // if plaid data exists try to fetch new transactions and fetch current month
         if (data.user.plaid.accessToken) {
-          callBackend("fetchPlaidTransactions").then(
-            (data) => {
-              console.log(`Fetched ${data} new transactions from Plaid`);
-              callBackend(
-                "loadTransactions",
-                startOfMonthDate.toISOString(),
-                endOfMonthDate.toISOString()
-              ).then(
-                (res) => {
-                  Update({
-                    transactions: res,
-                  });
-                },
-                (err) => {
-                  alert(`Unable to display transactions! Error: ${err}`);
-                }
-              );
+          callBackend(
+            "fetchAndLoadTransactions",
+            startOfMonthDate.toISOString().split("T")[0],
+            endOfMonthDate.toISOString().split("T")[0]
+          ).then(
+            (res) => {
+              Update({
+                transactions: res,
+              });
             },
             (err) => {
-              alert(`Unable to fetch Plaid transactions! Error: ${err}`);
+              alert(`Unable to display transactions! Error: ${err}`);
             }
           );
         }

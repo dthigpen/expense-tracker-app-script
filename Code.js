@@ -246,8 +246,21 @@ function loadCategories() {
 function saveCategories(categories) {
   return saveValue('categories', categories)
 }
-
-function loadTransactions(startDateIsoString, endDateIsoString) {
+/**
+ * Fetch new transactions from Plaid then return back transactions within the date range
+ * @param {String} startDateIsoString Start date of returned transactions
+ * @param {String} endDateIsoString End date of returned transactions
+ */
+function fetchAndLoadTransactions(startDateIsoString = undefined, endDateIsoString = undefined) {
+  fetchPlaidTransactions()
+  return loadTransactions(startDateIsoString, endDateIsoString)
+}
+/**
+ * Load transactions within the date range
+ * @param {String} startDateIsoString Start date of returned transactions
+ * @param {String} endDateIsoString End date of returned transactions
+ */
+function loadTransactions(startDateIsoString = undefined, endDateIsoString = undefined) {
   let transactions = loadValue('transactions', { defaultValue: [], })
   if (startDateIsoString) {
     const startDate = new Date(startDateIsoString)
