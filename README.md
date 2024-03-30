@@ -11,7 +11,7 @@ A Google App Script project to analyze one's expenses and spending habits.
 - Categories - Setup categories to group transactions
 - Budgets - Create budgets with different sets of categories
 
-![GitHub Image](/docs/images/interface.png)
+![User Interface](/docs/images/interface.png)
 
 ## TODO
 
