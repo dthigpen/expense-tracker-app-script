@@ -1,4 +1,3 @@
-const USE_CACHE = false;
 const DEFAULT_PLAID_CONFIG = {
   url: "https://development.plaid.com",
   clientId: null,
@@ -33,21 +32,50 @@ function test() {
   // saveTransactions(transactions)
   // resetTestData()
   // testMe()
+
+  // console.log(fetchPlaidAccounts());
+  // clearTransactionsData()
+
+  // fetchPlaidTransactions()
+  // const transactions = loadTransactions()
+  // console.log(transactions[0])
+  // console.log(transactions.at(-1))
+  // console.log(transactions.length)
+  // console.log(Session.getActiveUser().getEmail())
+
 }
 
-function convertPlaidTransaction(plaidTransaction) {
+function convertPlaidTransaction(plaidTransaction, plaidAccounts = []) {
   const transaction = {
     id: null,
     date: plaidTransaction.date,
     name: plaidTransaction.name,
     amount: plaidTransaction.amount,
-    account: plaidTransaction.account_id,
+    account: plaidAccounts.find(a => a.account_id === plaidTransaction.account_id)?.name ?? 'unknown',
     source: 'plaid',
-    data: {...plaidTransaction}
+    data: { ...plaidTransaction }
   }
   return transaction;
 }
 
+function fetchPlaidAccounts() {
+  const userData = loadUser();
+  const { url, clientId, secret, accessToken } = userData.plaid
+  const endpoint = `${url}/accounts/get`
+  const getAccountsOptions = {
+    client_id: clientId,
+    secret: secret,
+    access_token: accessToken,
+  }
+  const fetchOptions = {
+    'method': 'post',
+    'contentType': 'application/json',
+    'payload': JSON.stringify(getAccountsOptions)
+  };
+  const response = UrlFetchApp.fetch(endpoint, fetchOptions)
+  const data = JSON.parse(response.getContentText());
+  return data
+}
 function fetchPlaidTransactions() {
   const userData = loadUser();
   const { url, clientId, secret, accessToken } = userData.plaid
@@ -75,7 +103,7 @@ function fetchPlaidTransactions() {
     };
     const response = UrlFetchApp.fetch(endpoint, fetchOptions)
     const data = JSON.parse(response.getContentText());
-    
+
     // Add this page of results
     added = added.concat(data.added);
     modified = modified.concat(data.modified);
@@ -85,24 +113,24 @@ function fetchPlaidTransactions() {
     // Update cursor to the next cursor
     cursor = data.next_cursor;
   }
-
+  const plaidAccounts = fetchPlaidAccounts()?.accounts ?? []
   const removedIds = new Set([removed.map(t => t.transaction_id)])
   const modifiedMap = new Map(modified.map(t => [t.transaction_id, t]))
   // load existing
   // filter out removed ones
   // replace modified ones
   const transactions = loadTransactions()
-  .filter(t => t.source !== 'plaid' || !removedIds.has(t.data?.transaction_id))
-  .map(t => {
-    if (t.source === 'plaid' && modifiedMap.get(t.transaction_id)) {
-    const plaidTransaction = modifiedMap.get(t.transaction_id)
-     return convertPlaidTransaction(plaidTransaction)
-    }
-    return t
-  })
+    .filter(t => t.source !== 'plaid' || !removedIds.has(t.data?.transaction_id))
+    .map(t => {
+      if (t.source === 'plaid' && modifiedMap.get(t.transaction_id)) {
+        const plaidTransaction = modifiedMap.get(t.transaction_id)
+        return convertPlaidTransaction(plaidTransaction, plaidAccounts)
+      }
+      return t
+    })
   // add new
   const transactionRepo = new InMemoryGenericRepository(transactions)
-  added = added.map(t => convertPlaidTransaction(t))
+  added = added.map(t => convertPlaidTransaction(t, plaidAccounts))
   transactionRepo.createAll(added)
   saveTransactions(transactions)
   userData.plaid.cursor = cursor
@@ -110,7 +138,7 @@ function fetchPlaidTransactions() {
   return added.length
 }
 function resetTestData() {
-  CacheService.getUserCache().removeAll(['user', 'budgets','categories','transactions'])
+  CacheService.getUserCache().removeAll(['user', 'budgets', 'categories', 'transactions'])
   PropertiesService.getUserProperties().deleteAllProperties()
   const user = loadUser()
 
@@ -165,7 +193,7 @@ function displayData() {
   console.log(`Categories:`)
   console.log(JSON.stringify(categories))
   console.log(`transactions:`)
-  console.log(JSON.stringify(transactions.slice(0,4)))
+  console.log(JSON.stringify(transactions.slice(0, 4)))
 }
 
 
@@ -180,38 +208,20 @@ function clearAllData() {
   return PropertiesService.getUserProperties().deleteAllProperties()
 }
 
-function loadValue(key, options = { defaultValue: null, useCache: true, mergeObject: null }) {
-  const userCache = CacheService.getUserCache()
+function loadValue(key, options = { defaultValue: null }) {
   const userProps = PropertiesService.getUserProperties()
-
-  // if the cache has a value parse it out,
-  // otherwise get from user properties
-  // otherwise use default value
-  let value = options.useCache ? userCache.get(key) : null
+  let value = userProps.getProperty(key)
   if (value !== undefined && value !== null) {
     value = JSON.parse(value)
   } else {
-    value = userProps.getProperty(key)
-    if (value !== undefined && value !== null) {
-      value = JSON.parse(value)
-    } else {
-      value = options.defaultValue
-    }
+    value = options.defaultValue
   }
-  const finalValue = options.mergeObject !== undefined && options.mergeObject !== null ? mergeDeep({}, options.mergeObject, value) : value
-  if (options.useCache) {
-    userCache.put(key, JSON.stringify(finalValue))
-  }
-  return finalValue
+  return value
 }
 
-function saveValue(key, value, options = { useCache: true }) {
-  const userCache = CacheService.getUserCache()
+function saveValue(key, value, options = {}) {
   const userProps = PropertiesService.getUserProperties()
   const stringified = JSON.stringify(value)
-  if (options.useCache) {
-    userCache.put(key, stringified)
-  }
   userProps.setProperty(key, stringified)
 }
 
@@ -225,41 +235,43 @@ function loadUser() {
       cursor: null,
     }
   }
-  return loadValue('user', { defaultValue: {}, mergeObject: DEFAULT_USER, useCache: USE_CACHE })
+  const value = loadValue('user', { defaultValue: {} })
+  const finalValue = mergeDeep({}, DEFAULT_USER, value)
+  return finalValue
 }
 
 function loadCategories() {
-  return loadValue('categories', { defaultValue: [], useCache: USE_CACHE})
+  return loadValue('categories', { defaultValue: [], })
 }
 function saveCategories(categories) {
-  return saveValue('categories', categories, { useCache: USE_CACHE })
+  return saveValue('categories', categories)
 }
 
 function loadTransactions(startDateIsoString, endDateIsoString) {
-  let transactions = loadValue('transactions', { defaultValue: [], useCache: USE_CACHE})
-  if(startDateIsoString) {
+  let transactions = loadValue('transactions', { defaultValue: [], })
+  if (startDateIsoString) {
     const startDate = new Date(startDateIsoString)
     transactions = transactions.filter(t => new Date(t.date) >= startDate)
   }
-  if(endDateIsoString) {
+  if (endDateIsoString) {
     const endDate = new Date(endDateIsoString)
     transactions = transactions.filter(t => new Date(t.date) <= endDate)
   }
   return transactions
 }
 function saveTransactions(transactions) {
-  return saveValue('transactions', transactions, { useCache: USE_CACHE })
+  return saveValue('transactions', transactions)
 }
 
 function loadBudgets() {
-  return loadValue('budgets', { defaultValue: [], useCache: USE_CACHE})
+  return loadValue('budgets', { defaultValue: [], })
 }
 function saveBudgets(budgets) {
-  return saveValue('budgets', budgets, { useCache: USE_CACHE })
+  return saveValue('budgets', budgets)
 }
 
 function saveUser(userData) {
-  return saveValue('user', userData, { useCache: USE_CACHE })
+  return saveValue('user', userData)
 }
 
 function loadAllData() {

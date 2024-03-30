@@ -609,6 +609,19 @@
                   `,
                   buttons: [
                     {
+                      text: "Clear Transactions",
+                      onClick: () => {
+                        if(confirm(`Delete all saved transactions?`)) {
+                          callBackend('clearTransactionsData')
+                          .then(() => {
+                            alert('Cleared transaction data!')
+                          }, err => {
+                            alert(`Error while clearing transactions: ${err}`)
+                          })
+                        }
+                      }
+                    },
+                    {
                       text: "Save",
                       onClick: () => {
                         try {
