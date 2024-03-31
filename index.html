@@ -105,6 +105,11 @@
       return hash;
     }
     const View = (state) => {
+      const selectedBudgetValue = state.selectedBudget
+        ? hashCode(state?.selectedBudget?.name ?? "") +
+          "_" +
+          state?.selectedBudget?.id
+        : null;
       console.log(
         hashCode(state?.selectedBudget?.name ?? "") +
           "_" +
@@ -114,13 +119,9 @@
       <section>
               <h2>Budget</h2>
                 <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; gap: 0.4rem">
-                <sl-select id="select-budget" placeholder="Select a budget" value=${
-                  state.selectedBudget
-                    ? hashCode(state?.selectedBudget?.name ?? "") +
-                      "_" +
-                      state?.selectedBudget?.id
-                    : null
-                } @sl-input=${(e) => {
+                <sl-select id="select-budget" placeholder="Select a budget" value=${selectedBudgetValue} @sl-input=${(
+        e
+      ) => {
         const selectedValue = document.getElementById("select-budget")?.value;
         const selectedId = selectedValue.slice(selectedValue.indexOf("_") + 1);
         const selectedBudget = state.budgets.find((b) => b.id === selectedId);

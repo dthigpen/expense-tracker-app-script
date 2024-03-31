@@ -17,10 +17,6 @@ A Google App Script project to analyze one's expenses and spending habits.
 
 - Improve UI styling
 - Bundle JS libraries instead of using CDNs
-- In app Plaid token generation
-- Import Settings
-  - Dialog for setting up Plaid
-  - Handle multiple Plaid links (e.g. multiple banks)
 - Select institution accounts to apply budget to
 - Manual transaction entry
 - Budget breakdown
