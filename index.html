@@ -453,7 +453,7 @@
                     }
                   );
                 }}>
-                  <div style="display: flex; justify-content: space-between; gap: 0.4rem">
+                  <div class="button-bar">
                     <div style="display: flex; justify-content: start; gap: 0.4rem">
                     <sl-input type="date" name="start" id="transactions-start-date" help-text="Start" size="medium" value=${
                       startOfMonthDate.toISOString().split("T")[0]
@@ -570,7 +570,7 @@
             
                 </div>
                 ${Dialog(state, {
-                  title: "Plaid Settings",
+                  title: "Import Settings",
                   requestCloseHandler: () =>
                     Update({ selectedPlaidConfig: null }),
                   open: state.selectedPlaidConfig !== null,
@@ -578,13 +578,6 @@
                     <div
                       style="display: flex; flex-direction: column; gap: 0.5rem"
                     >
-                      <label for="plaid-url">Plaid API URL</label>
-                      <sl-input
-                        type="text"
-                        id="plaid-url"
-                        value=${state.user.plaid.url}
-                        placeholder="Enter your Plaid API Endpoint URL"
-                      />
                       <label for="plaid-client-id">Plaid Client Id</label>
                       <sl-input
                         type="text"
@@ -599,13 +592,93 @@
                         value=${state.user.plaid.secret}
                         placeholder="Enter your Plaid Secret"
                       />
-                      <label for="plaid-access-token">Plaid Access Token</label>
-                      <sl-input
-                        type="text"
-                        id="plaid-access-token"
-                        value=${state.user.plaid.accessToken}
-                        placeholder="Access token"
-                      />
+                      <h4>Links</h4>
+                      <div class="button-bar">
+                        <div></div>
+                        <sl-button size="small" @click=${() => {
+                          callBackend("createLinkToken").then(
+                            (res) => {
+                              const linkToken = res.link_token;
+                              const handler = Plaid.create({
+                                token: linkToken,
+                                onSuccess: async (publicToken, metadata) => {
+                                  callBackend(
+                                    "createAndSaveAccessToken",
+                                    publicToken
+                                  ).then(
+                                    (res) => {
+                                      const user = state.user;
+                                      user.plaid.links.push(res);
+                                      Update({ user: user });
+                                    },
+                                    (err) => {
+                                      alert(
+                                        `Error exchanging public token: ${err}`
+                                      );
+                                    }
+                                  );
+                                },
+                                onEvent: (eventName, metadata) => {
+                                  console.log("Event:", eventName);
+                                  console.log("Metadata:", metadata);
+                                },
+                                onExit: (error, metadata) => {
+                                  console.log(error, metadata);
+                                },
+                              });
+                              handler.open();
+                            },
+                            (err) => {
+                              alert(`Error creating link token: ${err}`);
+                            }
+                          );
+                        }}>New</sl-button>
+                      
+                        </div>
+                      <table>
+                        <thead>
+                          <tr>
+                            <td>Name</td>
+                            <td>Token</td>
+                            <td>Action</td>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${state?.user?.plaid?.links?.map(
+                            (l, i) =>
+                              nannyHtml`
+                              <tr>
+                                <td>${l.name}</td>
+                                <td><sl-input style="max-width: 40ch;" size="small" type="password" value=${
+                                  l?.link.access_token ?? ""
+                                } password-toggle></sl-input></td>
+                                <td>
+                                  <sl-button size="small" @click=${() => {
+                                    if (
+                                      confirm(
+                                        `Are you sure you want to delete Plaid link ${l.name}?`
+                                      )
+                                    ) {
+                                      const user = state.user;
+                                      user.plaid.links.splice(i, 1);
+                                      callBackend("saveUser", user).then(
+                                        () => {
+                                          Update({ user: user });
+                                        },
+                                        (err) => {
+                                          alert(
+                                            `Error while deleting Plaid token: ${err}`
+                                          );
+                                        }
+                                      );
+                                    }
+                                  }}>Delete</sl-button>
+                                </td>
+                              </tr>
+                              `
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   `,
                   buttons: [
@@ -717,6 +790,7 @@
         });
         // if plaid data exists try to fetch new transactions and fetch current month
         if (data.user.plaid.accessToken) {
+          /*
           callBackend(
             "fetchAndLoadTransactions",
             startOfMonthDate.toISOString().split("T")[0],
@@ -731,6 +805,7 @@
               alert(`Unable to display transactions! Error: ${err}`);
             }
           );
+          */
         }
       })
       .loadAllData();
