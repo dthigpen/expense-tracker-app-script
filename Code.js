@@ -1,4 +1,5 @@
-const PLAID_API_BASE_URL = "https://development.plaid.com"
+const DEFAULT_DRIVE_FOLDER = 'Expense Tracker App'
+const PLAID_API_BASE_URL = 'https://development.plaid.com'
 const DEFAULT_PLAID_CONFIG = {
   url: PLAID_API_BASE_URL,
   clientId: null,
@@ -26,6 +27,15 @@ const DEFAULT_BUDGET = {
 
 function test() {
   console.log(JSON.stringify(loadUser()))
+  const appFolder = getDriveAppFolder()
+  writeDriveFile(
+    ['data.json'],
+    JSON.stringify({ transactions: [{ amount: 4444 }], user: { foo: 'bazz' } }),
+    { rootFolder: appFolder }
+  )
+
+  console.log(readDriveFile(['data.json'], { rootFolder: appFolder }))
+  // console.log(JSON.stringify(loadUser()))
   // const plaidTransactions = loadTransactions()
   // const transactions = plaidTransactions.map((t, i) => {
   //   const t2 = convertPlaidTransaction(t)
@@ -36,7 +46,7 @@ function test() {
   // testMe()
 
   // console.log(fetchPlaidAccounts());
-  clearTransactionsData()
+  // clearTransactionsData()
 
   // fetchPlaidTransactions()
   // const transactions = loadTransactions()
@@ -46,6 +56,110 @@ function test() {
   // console.log(Session.getActiveUser().getEmail())
 
 }
+
+/**
+ * Get Drive Options
+ * @typedef {Object} GetDriveOptions
+ * @property {Folder} rootFolder Root folder to look for paths
+ * @property {boolean} create Create the file/folder otherwise throw an error
+ */
+
+/**
+ * Write Drive Options
+ * @typedef {Object} WriteDriveOptions
+ * @property {Folder} rootFolder Root folder to look for paths
+ * @property {string} mimeType MIME type to create file with, when applicable
+ */
+/**
+ * Get a Drive folder
+ * @param {string[]} folderComponents Array of folder component paths
+ * @param {GetDriveOptions} options
+ * @returns {Folder} A reference to the created file
+ */
+function getDriveFolder(folderComponents, options = {}) {
+  options.rootFolder = options.rootFolder ?? DriveApp.getRootFolder()
+  options.create = options.create ?? false
+  // if there are no remaining folder components return the root folder
+  if (folderComponents.length <= 0) {
+    return options.rootFolder
+  }
+  let parentFolder = options.rootFolder
+  const [folderName, ...remainingFolderNames] = folderComponents
+  const foldersIter = parentFolder.getFoldersByName(folderName)
+  if (foldersIter.hasNext()) {
+    parentFolder = foldersIter.next()
+  } else if (options.create) {
+    parentFolder = parentFolder.createFolder(folderName)
+  } else {
+    throw Error(`Folder does not exist: ${folderName}`)
+    // return null
+  }
+  return getDriveFolder(remainingFolderNames, { ...options, rootFolder: parentFolder })
+}
+
+/**
+ * Get the given drive file
+ * @param {string[]} fileComponents Array of file component paths. Last component is the file name
+ * @param {GetDriveOptions} options 
+ * @returns {File} the file reference
+ */
+function getDriveFile(fileComponents, options = {}) {
+  options.rootFolder = options.rootFolder ?? DriveApp.getRootFolder()
+
+  const folderComponents = fileComponents.slice(0, fileComponents.length - 1)
+  const fileName = fileComponents.at(-1)
+  const folder = getDriveFolder(folderComponents, { ...options, create: false })
+  const filesIter = folder.getFilesByName(fileName)
+  if (filesIter.hasNext()) {
+    return filesIter.next()
+  }
+  throw Error(`File does not exist: ${fileComponents.join('/')}`)
+  // return null
+}
+
+
+/**
+ * Read the content of a file
+ * @param {string[]} fileComponents Array of file component paths. Last component is the file name
+ * @param {GetDriveOptions} options
+ * @returns {string} Text file content
+ */
+function readDriveFile(fileComponents, options = {}) {
+  const file = getDriveFile(fileComponents, options)
+  return file.getBlob().getDataAsString()
+}
+/**
+ * Create a file on Drive and return it
+ * @param {string[]} fileComponents Array of file component paths. Last component is the file name
+ * @param {string} content Text content of the file
+ * @param {WriteDriveOptions} options
+ * @returns {File} A reference to the created file
+ */
+function writeDriveFile(fileComponents, content, options = {}) {
+  options.rootFolder = options.rootFolder ?? DriveApp.getRootFolder()
+  options.mimeType = options.mimeType ?? 'application/json'
+
+  const folderComponents = fileComponents.slice(0, fileComponents.length - 1)
+  const fileName = fileComponents.at(-1)
+
+  const folder = getDriveFolder(folderComponents, { ...options, create: true })
+  const filesIter = folder.getFilesByName(fileName)
+  let file = null
+  if (filesIter.hasNext()) {
+    file = filesIter.next()
+    file.setContent(content)
+  } else {
+    file = folder.createFile(fileName, content, options.mimeType)
+  }
+  return file
+}
+
+
+function getDriveAppFolder() {
+  return getDriveFolder([DEFAULT_DRIVE_FOLDER], { create: true })
+}
+
+
 
 function convertPlaidTransaction(plaidTransaction, plaidAccounts = []) {
   const transaction = {
@@ -57,7 +171,7 @@ function convertPlaidTransaction(plaidTransaction, plaidAccounts = []) {
     source: 'plaid',
     data: { ...plaidTransaction }
   }
-  return transaction;
+  return transaction
 }
 
 function fetchPlaidAccounts(clientId, secret, accessToken) {
@@ -71,9 +185,9 @@ function fetchPlaidAccounts(clientId, secret, accessToken) {
     'method': 'post',
     'contentType': 'application/json',
     'payload': JSON.stringify(getAccountsOptions)
-  };
+  }
   const response = UrlFetchApp.fetch(endpoint, fetchOptions)
-  const data = JSON.parse(response.getContentText());
+  const data = JSON.parse(response.getContentText())
   return data
 }
 
@@ -84,20 +198,20 @@ function createLinkToken() {
     client_id: clientId,
     secret: secret,
     user: {
-      "client_user_id": user.id,
+      client_user_id: user.id,
     },
-    client_name: "Expense Tracker App Script",
-    products: ["transactions"],
-    country_codes: ["US"],
-    language: "en",
+    client_name: 'Expense Tracker App Script',
+    products: ['transactions'],
+    country_codes: ['US'],
+    language: 'en',
   }
   const fetchOptions = {
     'method': 'post',
     'contentType': 'application/json',
     'payload': JSON.stringify(createTokenOptions)
-  };
+  }
   const response = UrlFetchApp.fetch(PLAID_API_BASE_URL + '/link/token/create', fetchOptions)
-  const data = JSON.parse(response.getContentText());
+  const data = JSON.parse(response.getContentText())
   return data
 }
 /**
@@ -130,7 +244,7 @@ function exchangePublicToken(clientId, secret, publicToken) {
     'method': 'post',
     'contentType': 'application/json',
     'payload': JSON.stringify(exchangeOptions)
-  };
+  }
   /*
   Example response:
   {
@@ -140,7 +254,7 @@ function exchangePublicToken(clientId, secret, publicToken) {
   }
   */
   const response = UrlFetchApp.fetch(PLAID_API_BASE_URL + '/item/public_token/exchange', fetchOptions)
-  const data = JSON.parse(response.getContentText());
+  const data = JSON.parse(response.getContentText())
   return data
 }
 
@@ -159,11 +273,11 @@ function exchangePublicToken(clientId, secret, publicToken) {
 function fetchPlaidTransactions(clientId, secret, accessToken, cursor = null) {
   const endpoint = `${PLAID_API_BASE_URL}/transactions/sync`
   // New transaction updates since "cursor"
-  let added = [];
-  let modified = [];
+  let added = []
+  let modified = []
   // Removed transaction ids
-  let removed = [];
-  let hasMore = true;
+  let removed = []
+  let hasMore = true
   // Iterate through each page of new transaction updates for item
   while (hasMore) {
     const transactionSyncOptions = {
@@ -177,18 +291,18 @@ function fetchPlaidTransactions(clientId, secret, accessToken, cursor = null) {
       'method': 'post',
       'contentType': 'application/json',
       'payload': JSON.stringify(transactionSyncOptions)
-    };
+    }
     const response = UrlFetchApp.fetch(endpoint, fetchOptions)
-    const data = JSON.parse(response.getContentText());
+    const data = JSON.parse(response.getContentText())
 
     // Add this page of results
-    added = added.concat(data.added);
-    modified = modified.concat(data.modified);
-    removed = removed.concat(data.removed);
-    hasMore = data.has_more;
+    added = added.concat(data.added)
+    modified = modified.concat(data.modified)
+    removed = removed.concat(data.removed)
+    hasMore = data.has_more
 
     // Update cursor to the next cursor
-    cursor = data.next_cursor;
+    cursor = data.next_cursor
   }
   return {
     cursor,
@@ -198,13 +312,13 @@ function fetchPlaidTransactions(clientId, secret, accessToken, cursor = null) {
   }
 }
 function fetchAndSavePlaidTransactions() {
-  const userData = loadUser();
-  const { clientId, secret } = userData.plaid
+  const user = loadUser()
+  const { clientId, secret } = user.plaid
   const prevExistingTransactions = loadTransactions()
   const nonPlaidTransactions = prevExistingTransactions.filter(t => t.source !== 'plaid')
   let plaidTransactions = prevExistingTransactions.filter(t => t.source === 'plaid')
   const addedTransactions = []
-  for (const link of userData.plaid.links) {
+  for (const link of user.plaid.links) {
     const accessToken = link.link.access_token
     let cursor = link.cursor ?? null
     const { added, modified, removed, ...rest } = fetchPlaidTransactions(clientId, secret, accessToken, cursor)
@@ -238,22 +352,22 @@ function resetTestData() {
   const user = loadUser()
 
   let newBudget = {
-    name: "Shared",
+    name: 'Shared',
   }
   let newCategories = [
     {
-      name: "Income",
+      name: 'Income',
       includes: [
         {
-          name: "COMPANY"
+          name: 'COMPANY'
         }
       ]
     },
     {
-      name: "Electric/Gas",
+      name: 'Electric/Gas',
       includes: [
         {
-          name: "xcel"
+          name: 'xcel'
         }
       ]
     }
@@ -281,13 +395,13 @@ function displayData() {
   const categories = loadCategories()
   const budgets = loadBudgets()
   const transactions = loadTransactions()
-  console.log(`User:`)
+  console.log('User:')
   console.log(JSON.stringify(user))
-  console.log(`Budgets:`)
+  console.log('Budgets:')
   console.log(JSON.stringify(budgets))
-  console.log(`Categories:`)
+  console.log('Categories:')
   console.log(JSON.stringify(categories))
-  console.log(`transactions:`)
+  console.log('transactions:')
   console.log(JSON.stringify(transactions.slice(0, 4)))
 }
 
@@ -359,7 +473,15 @@ function fetchAndLoadTransactions(startDateIsoString = undefined, endDateIsoStri
  * @param {String} endDateIsoString End date of returned transactions
  */
 function loadTransactions(startDateIsoString = undefined, endDateIsoString = undefined) {
-  let transactions = loadValue('transactions', { defaultValue: [], })
+  const appFolder = getDriveAppFolder()
+  let transactions = []
+  try {
+    const stringified = readDriveFile(['transactions.json'], { rootFolder: appFolder })
+    transactions = JSON.parse(stringified)
+  } catch (err) {
+    // file not found, default to no transactions
+  }
+
   if (startDateIsoString) {
     const startDate = new Date(startDateIsoString)
     transactions = transactions.filter(t => new Date(t.date) >= startDate)
@@ -370,8 +492,15 @@ function loadTransactions(startDateIsoString = undefined, endDateIsoString = und
   }
   return transactions
 }
+/**
+ * Save transactions to Drive
+ * @param {object[]} transactions Array of transactions
+ * @returns 
+ */
 function saveTransactions(transactions) {
-  return saveValue('transactions', transactions)
+  const appFolder = getDriveAppFolder()
+  const stringified = JSON.stringify(transactions)
+  writeDriveFile(['transactions.json'], stringified, { rootFolder: appFolder })
 }
 
 function loadBudgets() {
@@ -395,25 +524,25 @@ function loadAllData() {
 
 class IRepository {
   createOne(object) {
-    new Error(`Unimplemented`)
+    new Error('Unimplemented')
   }
   createAll(objects) {
     return objects.map(o => this.createOne(o))
   }
   getOne(id) {
-    new Error(`Unimplemented`)
+    new Error('Unimplemented')
   }
   getAll() {
-    new Error(`Unimplemented`)
+    new Error('Unimplemented')
   }
   updateOne(object) {
-    new Error(`Unimplemented`)
+    new Error('Unimplemented')
   }
   updateAll(objects) {
     return objects.map(o => this.updateOne(o))
   }
   deleteOne(id) {
-    new Error(`Unimplemented`)
+    new Error('Unimplemented')
   }
   deleteAll(ids) {
     return ids.map(id => this.deleteOne(id))
@@ -438,7 +567,7 @@ class IRepository {
 class InMemoryGenericRepository extends IRepository {
   constructor(data) {
     super()
-    this.data = data ?? [];
+    this.data = data ?? []
   }
 
   createOne(object) {
@@ -455,7 +584,7 @@ class InMemoryGenericRepository extends IRepository {
     return object
   }
   getAll() {
-    return this.data ?? [];
+    return this.data ?? []
   }
   updateOne(object) {
     const index = this.data.findIndex(o => o.id === object.id)
@@ -493,19 +622,19 @@ function categoryRepoCall(fnName, arg) {
 
 function doGet() {
   // return HtmlService.createHtmlOutputFromFile('index');
-  const output = HtmlService.createTemplateFromFile('index').evaluate();
+  const output = HtmlService.createTemplateFromFile('index').evaluate()
   output.addMetaTag('viewport', 'width=device-width, initial-scale=1')
-  return output;
+  return output
 }
 
 function doPost(req) {
   return ContentService.createTextOutput(JSON.stringify(req))
-    .setMimeType(ContentService.MimeType.JSON);
+    .setMimeType(ContentService.MimeType.JSON)
 
 }
 
 function include(filename) {
-  return HtmlService.createTemplateFromFile(filename).evaluate().getContent();
+  return HtmlService.createTemplateFromFile(filename).evaluate().getContent()
 }
 
 /**
@@ -514,7 +643,7 @@ function include(filename) {
  * @returns {boolean}
  */
 function isObject_(item) {
-  return (item && typeof item === 'object' && !Array.isArray(item));
+  return (item && typeof item === 'object' && !Array.isArray(item))
 }
 
 
@@ -525,19 +654,19 @@ function isObject_(item) {
  * @param ...sources
  */
 function mergeDeep(target, ...sources) {
-  if (!sources.length) return target;
-  const source = sources.shift();
+  if (!sources.length) return target
+  const source = sources.shift()
 
   if (isObject_(target) && isObject_(source)) {
     for (const key in source) {
       if (isObject_(source[key])) {
-        if (!target[key]) Object.assign(target, { [key]: {} });
-        mergeDeep(target[key], source[key]);
+        if (!target[key]) Object.assign(target, { [key]: {} })
+        mergeDeep(target[key], source[key])
       } else {
-        Object.assign(target, { [key]: source[key] });
+        Object.assign(target, { [key]: source[key] })
       }
     }
   }
 
-  return mergeDeep(target, ...sources);
+  return mergeDeep(target, ...sources)
 }
