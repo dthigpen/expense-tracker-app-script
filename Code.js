@@ -1,5 +1,6 @@
+const PLAID_API_BASE_URL = "https://development.plaid.com"
 const DEFAULT_PLAID_CONFIG = {
-  url: "https://development.plaid.com",
+  url: PLAID_API_BASE_URL,
   clientId: null,
   secret: null,
 }
@@ -24,6 +25,7 @@ const DEFAULT_BUDGET = {
 }
 
 function test() {
+  console.log(JSON.stringify(loadUser()))
   // const plaidTransactions = loadTransactions()
   // const transactions = plaidTransactions.map((t, i) => {
   //   const t2 = convertPlaidTransaction(t)
@@ -34,7 +36,7 @@ function test() {
   // testMe()
 
   // console.log(fetchPlaidAccounts());
-  // clearTransactionsData()
+  clearTransactionsData()
 
   // fetchPlaidTransactions()
   // const transactions = loadTransactions()
@@ -58,10 +60,8 @@ function convertPlaidTransaction(plaidTransaction, plaidAccounts = []) {
   return transaction;
 }
 
-function fetchPlaidAccounts() {
-  const userData = loadUser();
-  const { url, clientId, secret, accessToken } = userData.plaid
-  const endpoint = `${url}/accounts/get`
+function fetchPlaidAccounts(clientId, secret, accessToken) {
+  const endpoint = `${PLAID_API_BASE_URL}/accounts/get`
   const getAccountsOptions = {
     client_id: clientId,
     secret: secret,
@@ -76,11 +76,88 @@ function fetchPlaidAccounts() {
   const data = JSON.parse(response.getContentText());
   return data
 }
-function fetchPlaidTransactions() {
-  const userData = loadUser();
-  const { url, clientId, secret, accessToken } = userData.plaid
-  let cursor = userData.plaid.cursor
-  const endpoint = `${url}/transactions/sync`
+
+function createLinkToken() {
+  const user = loadUser()
+  const { clientId, secret, ...rest } = user.plaid
+  const createTokenOptions = {
+    client_id: clientId,
+    secret: secret,
+    user: {
+      "client_user_id": user.id,
+    },
+    client_name: "Expense Tracker App Script",
+    products: ["transactions"],
+    country_codes: ["US"],
+    language: "en",
+  }
+  const fetchOptions = {
+    'method': 'post',
+    'contentType': 'application/json',
+    'payload': JSON.stringify(createTokenOptions)
+  };
+  const response = UrlFetchApp.fetch(PLAID_API_BASE_URL + '/link/token/create', fetchOptions)
+  const data = JSON.parse(response.getContentText());
+  return data
+}
+/**
+ * Exchange a Plaid public token for an access token and save it
+ * @param {string} publicToken 
+ */
+function createAndSaveAccessToken(publicToken) {
+  const user = loadUser()
+  const { clientId, secret, ...rest } = user.plaid
+  const linkData = exchangePublicToken(clientId, secret, publicToken)
+  const linkObj = { name: `Link ${user.plaid.links.length + 1}`, link: linkData, cursor: null }
+  user.plaid.links.push(linkObj)
+  saveUser(user)
+  return linkObj
+}
+/**
+ * Exchange a Plaid public token for an access token
+ * @param {string} clientId 
+ * @param {string} secret 
+ * @param {string} publicToken 
+ */
+function exchangePublicToken(clientId, secret, publicToken) {
+
+  const exchangeOptions = {
+    client_id: clientId,
+    secret: secret,
+    public_token: publicToken
+  }
+  const fetchOptions = {
+    'method': 'post',
+    'contentType': 'application/json',
+    'payload': JSON.stringify(exchangeOptions)
+  };
+  /*
+  Example response:
+  {
+    "access_token": "access-sandbox-de3ce8ef-33f8-452c-a685-8671031fc0f6",
+    "item_id": "M5eVJqLnv3tbzdngLDp9FL5OlDNxlNhlE55op",
+    "request_id": "Aim3b"
+  }
+  */
+  const response = UrlFetchApp.fetch(PLAID_API_BASE_URL + '/item/public_token/exchange', fetchOptions)
+  const data = JSON.parse(response.getContentText());
+  return data
+}
+
+/**
+ * An aggregate of plaid transaction changes
+ * @typedef {{added: array, modified: array, removed: array, cursor: string}} TransactionChanges
+ */
+/**
+ * 
+ * @param {string} clientId plaid client id
+ * @param {string} secret plaid secret
+ * @param {string} accessToken plaid access token
+ * @param {string} cursor plaid transactions cursor
+ * @returns {TransactionChanges}
+ */
+function fetchPlaidTransactions(clientId, secret, accessToken, cursor = null) {
+  const endpoint = `${PLAID_API_BASE_URL}/transactions/sync`
   // New transaction updates since "cursor"
   let added = [];
   let modified = [];
@@ -113,29 +190,47 @@ function fetchPlaidTransactions() {
     // Update cursor to the next cursor
     cursor = data.next_cursor;
   }
-  const plaidAccounts = fetchPlaidAccounts()?.accounts ?? []
-  const removedIds = new Set([removed.map(t => t.transaction_id)])
-  const modifiedMap = new Map(modified.map(t => [t.transaction_id, t]))
-  // load existing
-  // filter out removed ones
-  // replace modified ones
-  const transactions = loadTransactions()
-    .filter(t => t.source !== 'plaid' || !removedIds.has(t.data?.transaction_id))
-    .map(t => {
-      if (t.source === 'plaid' && modifiedMap.get(t.transaction_id)) {
-        const plaidTransaction = modifiedMap.get(t.transaction_id)
-        return convertPlaidTransaction(plaidTransaction, plaidAccounts)
-      }
-      return t
-    })
-  // add new
-  const transactionRepo = new InMemoryGenericRepository(transactions)
-  added = added.map(t => convertPlaidTransaction(t, plaidAccounts))
-  transactionRepo.createAll(added)
-  saveTransactions(transactions)
-  userData.plaid.cursor = cursor
-  saveUser(userData)
-  return added.length
+  return {
+    cursor,
+    added,
+    modified,
+    removed,
+  }
+}
+function fetchAndSavePlaidTransactions() {
+  const userData = loadUser();
+  const { clientId, secret } = userData.plaid
+  const prevExistingTransactions = loadTransactions()
+  const nonPlaidTransactions = prevExistingTransactions.filter(t => t.source !== 'plaid')
+  let plaidTransactions = prevExistingTransactions.filter(t => t.source === 'plaid')
+  const addedTransactions = []
+  for (const link of userData.plaid.links) {
+    const accessToken = link.link.access_token
+    let cursor = link.cursor ?? null
+    const { added, modified, removed, ...rest } = fetchPlaidTransactions(clientId, secret, accessToken, cursor)
+    cursor = rest.cursor
+
+    const plaidAccounts = fetchPlaidAccounts(clientId, secret, accessToken)?.accounts ?? []
+    const removedIds = new Set([removed.map(t => t.transaction_id)])
+    const modifiedMap = new Map(modified.map(t => [t.transaction_id, t]))
+    // filter out removed transactions
+    // update modified ones
+    plaidTransactions = plaidTransactions.filter(t => !removedIds.has(t.data?.transaction_id))
+      .map(t => {
+        if (modifiedMap.get(t.transaction_id)) {
+          const plaidTransaction = modifiedMap.get(t.transaction_id)
+          return convertPlaidTransaction(plaidTransaction, plaidAccounts)
+        }
+        return t
+      })
+    addedTransactions.push(...added.map(t => convertPlaidTransaction(t, plaidAccounts)))
+  }
+  const allTransactions = [...nonPlaidTransactions, ...plaidTransactions]
+  const transactionRepo = new InMemoryGenericRepository(allTransactions)
+  transactionRepo.createAll(addedTransactions)
+  saveTransactions(allTransactions)
+  saveUser(user)
+  return addedTransactions.length
 }
 function resetTestData() {
   CacheService.getUserCache().removeAll(['user', 'budgets', 'categories', 'transactions'])
@@ -201,6 +296,7 @@ function clearTransactionsData() {
   saveTransactions([])
   const user = loadUser()
   delete user.plaid.cursor
+  delete user.plaid.accessToken
   saveUser(user)
 }
 
@@ -227,16 +323,18 @@ function saveValue(key, value, options = {}) {
 
 function loadUser() {
   const DEFAULT_USER = {
+    id: null,
     plaid: {
-      url: "https://development.plaid.com",
       clientId: null,
       secret: null,
-      accessToken: null,
-      cursor: null,
+      links: [],
     }
   }
   const value = loadValue('user', { defaultValue: {} })
   const finalValue = mergeDeep({}, DEFAULT_USER, value)
+  if (!finalValue.id) {
+    finalValue.id = Utilities.getUuid()
+  }
   return finalValue
 }
 
@@ -252,7 +350,7 @@ function saveCategories(categories) {
  * @param {String} endDateIsoString End date of returned transactions
  */
 function fetchAndLoadTransactions(startDateIsoString = undefined, endDateIsoString = undefined) {
-  fetchPlaidTransactions()
+  fetchAndSavePlaidTransactions()
   return loadTransactions(startDateIsoString, endDateIsoString)
 }
 /**
