@@ -110,11 +110,6 @@
           "_" +
           state?.selectedBudget?.id
         : null;
-      console.log(
-        hashCode(state?.selectedBudget?.name ?? "") +
-          "_" +
-          state?.selectedBudget?.id
-      );
       return state.HTML`
       <section>
               <h2>Budget</h2>
@@ -470,7 +465,6 @@
                         <sl-icon slot="prefix" name="gear"></sl-icon>
                         Import Settings
                     </sl-button>
-                      
                     </div>
                 </form>
                 <div>
@@ -565,7 +559,9 @@
                     ],
                     content: () =>
                       state.selectedTransaction !== null
-                        ? nannyHtml` <sl-tree> </sl-tree> `
+                        ? nannyHtml` <sl-tree>${objectToTreeItems(
+                            state.selectedTransaction
+                          )}</sl-tree>`
                         : "",
                   })}
             
@@ -779,8 +775,8 @@
     // the `ready` class so the UI fades in.
     document.body.classList.add("ready");
 
-    google.script.run
-      .withSuccessHandler((data) => {
+    callBackend("loadAllData").then(
+      (data) => {
         // select budget on first load
         const hasBudgets = data?.budgets && data.budgets.length > 0;
         Update({
@@ -790,8 +786,7 @@
           selectedBudget: hasBudgets ? data.budgets[0] : null,
         });
         // if plaid data exists try to fetch new transactions and fetch current month
-        if (data.user.plaid.accessToken) {
-          /*
+        if ((data?.user?.plaid?.links ?? []).length > 0) {
           callBackend(
             "fetchAndLoadTransactions",
             startOfMonthDate.toISOString().split("T")[0],
@@ -806,10 +801,12 @@
               alert(`Unable to display transactions! Error: ${err}`);
             }
           );
-          */
         }
-      })
-      .loadAllData();
+      },
+      (err) => {
+        alert(`Error while loading data: ${err}`);
+      }
+    );
 
     const transactionsStartPicker =
       document.querySelector("#start-date-picker");
@@ -837,24 +834,31 @@
      */
     function objectToTreeItems(object) {
       const entries = Object.entries(object);
-      const nonObjectEntries = entries.filter(
-        (e) => e[1].constructor !== Object
-      );
-      const objectEntries = entries.filter((e) => e[1].constructor === Object);
-      const items = [];
 
+      const nonObjectEntries = entries.filter(
+        (e) => !String(e?.[1]?.constructor).includes("Object")
+      );
+      const objectEntries = entries.filter((e) =>
+        String(e?.[1]?.constructor).includes("Object")
+      );
+      const items = [];
       items.push(
         ...nonObjectEntries.map(([k, v]) => {
-          const div = document.createElement("div");
-          render(
-            div,
-            uHtml`<sl-tree-item><pre>${
-              k + ": " + JSON.stringify(v)
-            }</pre></sl-tree-item>`
-          );
+          const div = document.createElement("sl-tree-item");
+          render(div, uHtml`<pre>${k + ": " + JSON.stringify(v)}</pre>`);
           return div;
         })
       );
+      for (const [k, v] of objectEntries) {
+        const div = document.createElement("sl-tree-item");
+        render(
+          div,
+          uHtml`
+              <pre>${k + ": {...}"}</pre>
+              ${objectToTreeItems(v)}`
+        );
+        items.push(div);
+      }
       return items;
     }
     /*

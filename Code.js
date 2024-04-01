@@ -27,34 +27,8 @@ const DEFAULT_BUDGET = {
 
 function test() {
   console.log(JSON.stringify(loadUser()))
-  const appFolder = getDriveAppFolder()
-  writeDriveFile(
-    ['data.json'],
-    JSON.stringify({ transactions: [{ amount: 4444 }], user: { foo: 'bazz' } }),
-    { rootFolder: appFolder }
-  )
-
-  console.log(readDriveFile(['data.json'], { rootFolder: appFolder }))
-  // console.log(JSON.stringify(loadUser()))
-  // const plaidTransactions = loadTransactions()
-  // const transactions = plaidTransactions.map((t, i) => {
-  //   const t2 = convertPlaidTransaction(t)
-  //   t2.id = i
-  // })
-  // saveTransactions(transactions)
-  // resetTestData()
-  // testMe()
-
-  // console.log(fetchPlaidAccounts());
-  // clearTransactionsData()
-
-  // fetchPlaidTransactions()
-  // const transactions = loadTransactions()
-  // console.log(transactions[0])
-  // console.log(transactions.at(-1))
-  // console.log(transactions.length)
-  // console.log(Session.getActiveUser().getEmail())
-
+  const transactions = loadTransactions()
+  console.log(`transaction count: ${transactions.length}`)
 }
 
 /**
@@ -318,12 +292,13 @@ function fetchAndSavePlaidTransactions() {
   const nonPlaidTransactions = prevExistingTransactions.filter(t => t.source !== 'plaid')
   let plaidTransactions = prevExistingTransactions.filter(t => t.source === 'plaid')
   const addedTransactions = []
+  const newLinks = []
   for (const link of user.plaid.links) {
     const accessToken = link.link.access_token
     let cursor = link.cursor ?? null
     const { added, modified, removed, ...rest } = fetchPlaidTransactions(clientId, secret, accessToken, cursor)
     cursor = rest.cursor
-
+    newLinks.push({ ...link, cursor })
     const plaidAccounts = fetchPlaidAccounts(clientId, secret, accessToken)?.accounts ?? []
     const removedIds = new Set([removed.map(t => t.transaction_id)])
     const modifiedMap = new Map(modified.map(t => [t.transaction_id, t]))
@@ -339,6 +314,7 @@ function fetchAndSavePlaidTransactions() {
       })
     addedTransactions.push(...added.map(t => convertPlaidTransaction(t, plaidAccounts)))
   }
+  user.plaid.links = newLinks
   const allTransactions = [...nonPlaidTransactions, ...plaidTransactions]
   const transactionRepo = new InMemoryGenericRepository(allTransactions)
   transactionRepo.createAll(addedTransactions)
